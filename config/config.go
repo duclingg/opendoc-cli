@@ -23,6 +23,7 @@ type Config struct {
 	GitHubToken   string `json:"github_token,omitempty"`
 	GitHubLogin   string `json:"github_login,omitempty"`
 	LLMProvider   string `json:"llm_provider,omitempty"`
+	LLMModel      string `json:"llm_model,omitempty"`
 	LLMAPIKey     string `json:"llm_api_key,omitempty"`
 	LLMBaseURL    string `json:"llm_base_url,omitempty"`
 	DocOutputType string `json:"doc_output_type,omitempty"`
@@ -34,7 +35,7 @@ func (c *Config) IsRegistered() bool {
 }
 
 func (c *Config) IsGitHubSetUp() bool  { return c.IsRegistered() }
-func (c *Config) IsLLMSetUp() bool     { return c.LLMProvider != "" }
+func (c *Config) IsLLMSetUp() bool     { return c.LLMProvider != "" && c.LLMModel != "" }
 func (c *Config) IsDocTypeSetUp() bool { return c.DocOutputType != "" }
 func (c *Config) IsDocPathSetUp() bool { return c.DocOutputPath != "" }
 
@@ -46,6 +47,7 @@ func (c *Config) Reset() error {
 	c.GitHubToken = ""
 	c.GitHubLogin = ""
 	c.LLMProvider = ""
+	c.LLMModel = ""
 	c.LLMAPIKey = ""
 	c.LLMBaseURL = ""
 	c.DocOutputType = ""

@@ -207,7 +207,7 @@ func (m *DeviceAuthModel) View() tea.View {
 		rows = append(rows, authHintStyle.Render("Press esc to go back"))
 	} else if m.userCode == "" {
 		rows = append(rows, authHintStyle.Render("Requesting authorization code…"))
-		rows = append(rows, lipgloss.NewStyle().PaddingLeft(2).Render(m.spinner.View()))
+		rows = append(rows, authHintStyle.Render(m.spinner.View()))
 	} else {
 		rows = append(rows, authHintStyle.Render("1. Your browser should open automatically."))
 		rows = append(rows, authHintStyle.Render("   Or visit: "+authURLStyle.Render(m.verifyURI)))
@@ -225,11 +225,11 @@ func (m *DeviceAuthModel) View() tea.View {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	if off := (m.width - lipgloss.Width(content)) / 2; off > 0 {
+		content = lipgloss.NewStyle().PaddingLeft(off).Render(content)
+	}
 
-	v := tea.NewView(authContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }

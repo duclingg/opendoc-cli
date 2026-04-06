@@ -7,6 +7,7 @@ import (
 	"opendoc/ui/setup"
 	"opendoc/ui/styles"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -27,6 +28,7 @@ type SettingsModel struct {
 	height  int
 	confirm confirmState
 	status  string
+	vp      viewport.Model
 }
 
 type settingsItem struct {
@@ -44,7 +46,10 @@ var settingsItems = []settingsItem{
 }
 
 func NewSettingsModel(cfg *config.Config, w, h int) *SettingsModel {
-	return &SettingsModel{cfg: cfg, width: w, height: h}
+	m := &SettingsModel{cfg: cfg, width: w, height: h}
+	m.vp = viewport.New()
+	m.syncViewport()
+	return m
 }
 
 func (m *SettingsModel) Init() tea.Cmd { return nil }
@@ -54,6 +59,7 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.syncViewport()
 
 	case resetDoneMsg:
 		m.confirm = confirmNone
@@ -71,7 +77,7 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 
-		case "esc", "q":
+		case "esc":
 			if m.confirm != confirmNone {
 				m.confirm = confirmNone
 				m.status = ""
@@ -83,11 +89,13 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
+				m.syncViewport()
 			}
 
 		case "down", "j":
 			if m.cursor < len(settingsItems)-1 {
 				m.cursor++
+				m.syncViewport()
 			}
 
 		case "enter", " ":
@@ -152,6 +160,66 @@ func (m *SettingsModel) doReset() tea.Cmd {
 	}
 }
 
+func (m *SettingsModel) renderHeader() string {
+	var rows []string
+	rows = append(rows, settingsTitleStyle.Render("⚙️  Settings"))
+	rows = append(rows, settingsHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"))
+	if m.cfg.IsRegistered() {
+		info := styles.ItemDescStyle.Render(fmt.Sprintf("GitHub: %s", m.cfg.GitHubLogin))
+		rows = append(rows, lipgloss.NewStyle().PaddingLeft(2).MarginBottom(1).Render(info))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+func (m *SettingsModel) buildListContent() (string, int) {
+	var rows []string
+	lineCount := 0
+	cursorLine := 0
+
+	for i, item := range settingsItems {
+		if i == m.cursor {
+			cursorLine = lineCount
+		}
+
+		var row string
+		if i == m.cursor {
+			title := styles.ItemTitleSelected.Render(item.title)
+			desc := styles.ItemDescStyle.Render(item.desc)
+			row = styles.ItemSelected.Render(title + "\n" + desc)
+		} else {
+			title := styles.ItemTitleNormal.Render(item.title)
+			desc := styles.ItemDescStyle.Render(item.desc)
+			row = styles.ItemNormal.Render(title + "\n" + desc)
+		}
+		rows = append(rows, row)
+		lineCount += lipgloss.Height(row)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
+}
+
+func (m *SettingsModel) contentWidth() int {
+	const maxWidth = 80
+	if m.width < maxWidth {
+		return m.width
+	}
+	return maxWidth
+}
+
+func (m *SettingsModel) syncViewport() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	header := m.renderHeader()
+	headerH := lipgloss.Height(header)
+	const footerH = 2 // reserve space for status line
+	m.vp.SetWidth(m.contentWidth())
+	m.vp.SetHeight(m.height - headerH - footerH)
+	content, cursorLine := m.buildListContent()
+	m.vp.SetContent(content)
+	m.vp.EnsureVisible(cursorLine, 0, 0)
+}
+
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
@@ -185,9 +253,6 @@ var (
 				Foreground(lipgloss.Color("#10B981")).
 				PaddingLeft(2).
 				MarginTop(1)
-
-	settingsContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
 func (m *SettingsModel) View() tea.View {
@@ -201,46 +266,20 @@ func (m *SettingsModel) View() tea.View {
 				confirmTextStyle.Render("y  confirm  •  n / esc  cancel"),
 			),
 		)
-		content := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
-		v := tea.NewView(content)
+		v := tea.NewView(dialog)
 		v.AltScreen = true
 		return v
 	}
 
-	var rows []string
-
-	rows = append(rows, settingsTitleStyle.Render("⚙️  Settings"))
-	rows = append(rows, settingsHintStyle.Render("↑/↓ navigate  •  enter select  •  esc/q back"))
-
-	if m.cfg.IsRegistered() {
-		info := styles.ItemDescStyle.Render(fmt.Sprintf("GitHub: %s", m.cfg.GitHubLogin))
-		rows = append(rows, lipgloss.NewStyle().PaddingLeft(2).MarginBottom(1).Render(info))
-	}
-
-	for i, item := range settingsItems {
-		var row string
-		if i == m.cursor {
-			title := styles.ItemTitleSelected.Render(item.title)
-			desc := styles.ItemDescStyle.Render(item.desc)
-			row = styles.ItemSelected.Render(title + "\n" + desc)
-		} else {
-			title := styles.ItemTitleNormal.Render(item.title)
-			desc := styles.ItemDescStyle.Render(item.desc)
-			row = styles.ItemNormal.Render(title + "\n" + desc)
-		}
-		rows = append(rows, row)
-	}
-
+	header := m.renderHeader()
+	body := m.vp.View()
+	parts := []string{header, body}
 	if m.status != "" {
-		rows = append(rows, settingsStatusStyle.Render(m.status))
+		parts = append(parts, settingsStatusStyle.Render(m.status))
 	}
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-
-	v := tea.NewView(settingsContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }

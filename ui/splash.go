@@ -42,7 +42,7 @@ func (m *SplashModel) Init() tea.Cmd {
 }
 
 func simulateLoading() tea.Cmd {
-	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
 		return splashDoneMsg{}
 	})
 }
@@ -106,7 +106,7 @@ func (m *SplashModel) View() tea.View {
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,
 		logoStyle.Render(logo),
-		subtitleStyle.Render("OpenDoc - Open sourced documentation manager"),
+		subtitleStyle.Render("opendoc cli - cli-based open sourced documentation manager"),
 		lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			m.spinner.View(),

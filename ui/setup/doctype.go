@@ -4,6 +4,7 @@ import (
 	"opendoc/config"
 	"opendoc/ui/styles"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -26,11 +27,15 @@ type DocTypeModel struct {
 	width    int
 	height   int
 	status   string
+	vp       viewport.Model
 	returnTo func(*config.Config, int, int) tea.Model
 }
 
 func NewDocTypeModel(cfg *config.Config, w, h int, returnTo func(*config.Config, int, int) tea.Model) *DocTypeModel {
-	return &DocTypeModel{cfg: cfg, width: w, height: h, returnTo: returnTo}
+	m := &DocTypeModel{cfg: cfg, width: w, height: h, returnTo: returnTo}
+	m.vp = viewport.New()
+	m.syncViewport()
+	return m
 }
 
 func (m *DocTypeModel) Init() tea.Cmd { return nil }
@@ -40,6 +45,7 @@ func (m *DocTypeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.syncViewport()
 
 	case docTypeSaveMsg:
 		if msg.err != nil {
@@ -61,11 +67,13 @@ func (m *DocTypeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
+				m.syncViewport()
 			}
 
 		case "down", "j":
 			if m.cursor < len(docTypeOptions)-1 {
 				m.cursor++
+				m.syncViewport()
 			}
 
 		case "enter", " ":
@@ -80,6 +88,62 @@ func (m *DocTypeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *DocTypeModel) contentWidth() int {
+	const maxWidth = 80
+	if m.width < maxWidth {
+		return m.width
+	}
+	return maxWidth
+}
+
+func (m *DocTypeModel) renderHeader() string {
+	return lipgloss.JoinVertical(lipgloss.Left,
+		docTypeTitleStyle.Render("📝 Documentation Output Type"),
+		docTypeHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
+	)
+}
+
+func (m *DocTypeModel) buildListContent() (string, int) {
+	var rows []string
+	lineCount := 0
+	cursorLine := 0
+
+	for i, opt := range docTypeOptions {
+		if i == m.cursor {
+			cursorLine = lineCount
+		}
+
+		var row string
+		if i == m.cursor {
+			title := styles.ItemTitleSelected.Render(opt.label)
+			desc := styles.ItemDescStyle.Render(opt.desc)
+			row = styles.ItemSelected.Render(title + "\n" + desc)
+		} else {
+			title := styles.ItemTitleNormal.Render(opt.label)
+			desc := styles.ItemDescStyle.Render(opt.desc)
+			row = styles.ItemNormal.Render(title + "\n" + desc)
+		}
+		rows = append(rows, row)
+		lineCount += lipgloss.Height(row)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
+}
+
+func (m *DocTypeModel) syncViewport() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	header := m.renderHeader()
+	headerH := lipgloss.Height(header)
+	const footerH = 2 // reserve space for status line
+	m.vp.SetWidth(m.contentWidth())
+	m.vp.SetHeight(m.height - headerH - footerH)
+	content, cursorLine := m.buildListContent()
+	m.vp.SetContent(content)
+	m.vp.EnsureVisible(cursorLine, 0, 0)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -100,41 +164,21 @@ var (
 				Foreground(lipgloss.Color("#EF4444")).
 				PaddingLeft(2).
 				MarginTop(1)
-
-	docTypeContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
 func (m *DocTypeModel) View() tea.View {
-	var rows []string
-
-	rows = append(rows, docTypeTitleStyle.Render("📝 Documentation Output Type"))
-	rows = append(rows, docTypeHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"))
-
-	for i, opt := range docTypeOptions {
-		var row string
-		if i == m.cursor {
-			title := styles.ItemTitleSelected.Render(opt.label)
-			desc := styles.ItemDescStyle.Render(opt.desc)
-			row = styles.ItemSelected.Render(title + "\n" + desc)
-		} else {
-			title := styles.ItemTitleNormal.Render(opt.label)
-			desc := styles.ItemDescStyle.Render(opt.desc)
-			row = styles.ItemNormal.Render(title + "\n" + desc)
-		}
-		rows = append(rows, row)
-	}
-
+	header := m.renderHeader()
+	body := m.vp.View()
+	parts := []string{header, body}
 	if m.status != "" {
-		rows = append(rows, docTypeStatusStyle.Render(m.status))
+		parts = append(parts, docTypeStatusStyle.Render(m.status))
+	}
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	if off := (m.width - lipgloss.Width(content)) / 2; off > 0 {
+		content = lipgloss.NewStyle().PaddingLeft(off).Render(content)
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-
-	v := tea.NewView(docTypeContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }

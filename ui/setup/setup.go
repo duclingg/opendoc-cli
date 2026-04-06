@@ -6,6 +6,7 @@ import (
 	"opendoc/config"
 	"opendoc/ui/styles"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -45,6 +46,7 @@ type SetupModel struct {
 	width      int
 	height     int
 	status     string
+	vp         viewport.Model
 	onComplete func(*config.Config, int, int) tea.Model
 }
 
@@ -60,7 +62,10 @@ func NewSetupModel(cfg *config.Config, w, h int, onComplete func(*config.Config,
 		// Callers must supply onComplete; fall back to quitting rather than panicking.
 		onComplete = func(_ *config.Config, _, _ int) tea.Model { return nil }
 	}
-	return &SetupModel{cfg: cfg, width: w, height: h, cursor: cursor, onComplete: onComplete}
+	m := &SetupModel{cfg: cfg, width: w, height: h, cursor: cursor, onComplete: onComplete}
+	m.vp = viewport.New()
+	m.syncViewport()
+	return m
 }
 
 func (m *SetupModel) Init() tea.Cmd { return nil }
@@ -74,6 +79,7 @@ func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.syncViewport()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -84,12 +90,14 @@ func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 				m.status = ""
+				m.syncViewport()
 			}
 
 		case "down", "j":
 			if m.cursor < m.totalItems()-1 {
 				m.cursor++
 				m.status = ""
+				m.syncViewport()
 			}
 
 		case "enter", " ":
@@ -109,10 +117,6 @@ func (m *SetupModel) selfReturnTo() func(*config.Config, int, int) tea.Model {
 
 func (m *SetupModel) handleSelect() (tea.Model, tea.Cmd) {
 	if m.isStartIdx(m.cursor) {
-		if !m.cfg.IsFullySetUp() {
-			m.status = "Complete all steps above before starting"
-			return m, nil
-		}
 		next := m.onComplete(m.cfg, m.width, m.height)
 		if next == nil {
 			return m, tea.Quit
@@ -144,6 +148,85 @@ func (m *SetupModel) handleSelect() (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *SetupModel) contentWidth() int {
+	const maxWidth = 80
+	if m.width < maxWidth {
+		return m.width
+	}
+	return maxWidth
+}
+
+func (m *SetupModel) renderHeader() string {
+	return lipgloss.JoinVertical(lipgloss.Left,
+		setupTitleStyle.Render("📄 OpenDoc — Setup"),
+		setupSubtitleStyle.Render("Complete each step to get started"),
+		setupHintStyle.Render("↑/↓ navigate  •  enter select  •  q quit"),
+	)
+}
+
+func (m *SetupModel) buildListContent() (string, int) {
+	var rows []string
+	lineCount := 0
+	cursorLine := 0
+
+	for i, step := range setupSteps {
+		if i == m.cursor {
+			cursorLine = lineCount
+		}
+
+		done := step.done(m.cfg)
+		var checkmark, titleStr string
+		if done {
+			checkmark = stepDoneStyle.Render("[✓]")
+			titleStr = stepDoneStyle.Render(step.label)
+		} else {
+			checkmark = stepPendingStyle.Render("[ ]")
+			titleStr = styles.ItemTitleNormal.Render(step.label)
+		}
+		descStr := styles.ItemDescStyle.Render(step.desc)
+		label := checkmark + " " + titleStr + "\n    " + descStr
+
+		var row string
+		if i == m.cursor {
+			row = styles.ItemSelected.Render(label)
+		} else {
+			row = styles.ItemNormal.Render(label)
+		}
+		rows = append(rows, row)
+		lineCount += lipgloss.Height(row)
+	}
+
+	// Start item
+	startIdx := len(setupSteps)
+	if m.cursor == startIdx {
+		cursorLine = lineCount
+	}
+	startTitle := startEnabledTitleStyle.Render("▶  Start")
+	var startRow string
+	if m.cursor == startIdx {
+		startRow = styles.ItemSelected.Render(startTitle)
+	} else {
+		startRow = styles.ItemNormal.Render(startTitle)
+	}
+	rows = append(rows, startRow)
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
+}
+
+func (m *SetupModel) syncViewport() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	header := m.renderHeader()
+	headerH := lipgloss.Height(header)
+	const footerH = 2 // reserve space for status line
+	m.vp.SetWidth(m.contentWidth())
+	m.vp.SetHeight(m.height - headerH - footerH)
+	content, cursorLine := m.buildListContent()
+	m.vp.SetContent(content)
+	m.vp.EnsureVisible(cursorLine, 0, 0)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -183,70 +266,21 @@ var (
 				Foreground(lipgloss.Color("#F59E0B")).
 				PaddingLeft(2).
 				MarginTop(1)
-
-	setupContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
 func (m *SetupModel) View() tea.View {
-	var rows []string
-
-	rows = append(rows, setupTitleStyle.Render("📄 OpenDoc — Setup"))
-	rows = append(rows, setupSubtitleStyle.Render("Complete each step to get started"))
-	rows = append(rows, setupHintStyle.Render("↑/↓ navigate  •  enter select  •  q quit"))
-
-	for i, step := range setupSteps {
-		done := step.done(m.cfg)
-
-		var checkmark, titleStr, descStr string
-		if done {
-			checkmark = stepDoneStyle.Render("[✓]")
-			titleStr = stepDoneStyle.Render(step.label)
-		} else {
-			checkmark = stepPendingStyle.Render("[ ]")
-			titleStr = styles.ItemTitleNormal.Render(step.label)
-		}
-		descStr = styles.ItemDescStyle.Render(step.desc)
-
-		label := checkmark + " " + titleStr + "\n    " + descStr
-
-		var row string
-		if i == m.cursor {
-			row = styles.ItemSelected.Render(label)
-		} else {
-			row = styles.ItemNormal.Render(label)
-		}
-		rows = append(rows, row)
-	}
-
-	// Start item
-	startIdx := len(setupSteps)
-	allDone := m.cfg.IsFullySetUp()
-	var startTitle string
-	if allDone {
-		startTitle = startEnabledTitleStyle.Render("▶  Start")
-	} else {
-		startTitle = startDisabledTitleStyle.Render("▶  Start")
-	}
-
-	var startRow string
-	if m.cursor == startIdx {
-		startRow = styles.ItemSelected.Render(startTitle)
-	} else {
-		startRow = styles.ItemNormal.Render(startTitle)
-	}
-	rows = append(rows, startRow)
-
+	header := m.renderHeader()
+	body := m.vp.View()
+	parts := []string{header, body}
 	if m.status != "" {
-		rows = append(rows, setupStatusStyle.Render(m.status))
+		parts = append(parts, setupStatusStyle.Render(m.status))
+	}
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	if off := (m.width - lipgloss.Width(content)) / 2; off > 0 {
+		content = lipgloss.NewStyle().PaddingLeft(off).Render(content)
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-
-	v := tea.NewView(setupContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }

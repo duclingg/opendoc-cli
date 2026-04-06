@@ -68,7 +68,7 @@ func (m *LLMCredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "❌ Failed to save setting"
 			return m, nil
 		}
-		next := m.returnTo(m.cfg, m.width, m.height)
+		next := NewLLMModelModel(m.cfg, m.provider, m.width, m.height, m.returnTo)
 		return next, next.Init()
 
 	case tea.KeyMsg:
@@ -94,6 +94,7 @@ func (m *LLMCredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			provider := m.provider
 			return m, func() tea.Msg {
 				cfg.LLMProvider = provider.id
+				cfg.LLMModel = "" // cleared — user must pick model in next step
 				if provider.local {
 					cfg.LLMBaseURL = val
 					cfg.LLMAPIKey = ""
@@ -171,11 +172,11 @@ func (m *LLMCredModel) View() tea.View {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	if off := (m.width - lipgloss.Width(content)) / 2; off > 0 {
+		content = lipgloss.NewStyle().PaddingLeft(off).Render(content)
+	}
 
-	v := tea.NewView(llmCredContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }

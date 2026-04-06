@@ -149,11 +149,11 @@ func (m *DocPathModel) View() tea.View {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	if off := (m.width - lipgloss.Width(content)) / 2; off > 0 {
+		content = lipgloss.NewStyle().PaddingLeft(off).Render(content)
+	}
 
-	v := tea.NewView(docPathContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }
