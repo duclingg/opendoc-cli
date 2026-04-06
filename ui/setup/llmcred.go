@@ -4,14 +4,18 @@ import (
 	"strings"
 
 	"opendoc/config"
+	"opendoc/ui/styles"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
+// llmCredSaveMsg carries the result of persisting the credential.
 type llmCredSaveMsg struct{ err error }
 
+// LLMCredModel collects the credential needed for the chosen provider:
+// an API key for hosted providers or a base URL for local ones.
 type LLMCredModel struct {
 	cfg      *config.Config
 	provider llmProvider
@@ -22,6 +26,9 @@ type LLMCredModel struct {
 	returnTo func(*config.Config, int, int) tea.Model
 }
 
+// NewLLMCredModel constructs the credential input screen. The text input is
+// pre-filled with any previously saved value and uses password masking for
+// API keys.
 func NewLLMCredModel(cfg *config.Config, provider llmProvider, w, h int, returnTo func(*config.Config, int, int) tea.Model) *LLMCredModel {
 	ti := textinput.New()
 	ti.CharLimit = 512
@@ -53,10 +60,13 @@ func NewLLMCredModel(cfg *config.Config, provider llmProvider, w, h int, returnT
 	}
 }
 
+// Init starts the text-input blink cursor.
 func (m *LLMCredModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+// Update handles window resizing, the async save result, and keyboard input.
+// Unhandled messages are forwarded to the text input component.
 func (m *LLMCredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -68,7 +78,7 @@ func (m *LLMCredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "❌ Failed to save setting"
 			return m, nil
 		}
-		next := m.returnTo(m.cfg, m.width, m.height)
+		next := NewLLMModelModel(m.cfg, m.provider, m.width, m.height, m.returnTo)
 		return next, next.Init()
 
 	case tea.KeyMsg:
@@ -93,6 +103,10 @@ func (m *LLMCredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cfg := m.cfg
 			provider := m.provider
 			return m, func() tea.Msg {
+				// Clear the model only when the user switches to a different provider.
+				if cfg.LLMProvider != provider.id {
+					cfg.LLMModel = ""
+				}
 				cfg.LLMProvider = provider.id
 				if provider.local {
 					cfg.LLMBaseURL = val
@@ -114,68 +128,49 @@ func (m *LLMCredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	llmCredTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1).
-				PaddingLeft(2)
-
 	llmCredProviderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#A78BFA")).
-				PaddingLeft(2).
 				MarginBottom(1)
 
 	llmCredLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#E5E7EB")).
-				PaddingLeft(2).
 				MarginBottom(1)
-
-	llmCredHintStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")).
-				PaddingLeft(2).
-				MarginBottom(2)
 
 	llmCredInputBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("#7C3AED")).
 				Padding(0, 1).
-				MarginLeft(2).
 				MarginBottom(1)
 
 	llmCredStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444")).
-				PaddingLeft(2).
 				MarginTop(1)
-
-	llmCredContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
+// View renders the credential input form: title, provider description, a
+// labeled text input, and an optional status message.
 func (m *LLMCredModel) View() tea.View {
-	var rows []string
-
-	rows = append(rows, llmCredTitleStyle.Render("🔑 Configure "+m.provider.name))
-	rows = append(rows, llmCredProviderStyle.Render(m.provider.desc))
-
+	var fieldLabel string
 	if m.provider.local {
-		rows = append(rows, llmCredLabelStyle.Render("Base URL"))
+		fieldLabel = "Base URL"
 	} else {
-		rows = append(rows, llmCredLabelStyle.Render("API Key"))
+		fieldLabel = "API Key"
 	}
 
-	rows = append(rows, llmCredHintStyle.Render("enter confirm  •  esc back"))
-	rows = append(rows, llmCredInputBoxStyle.Render(m.input.View()))
-
+	rows := []string{
+		styles.TitleStyle.Render("🔑 Configure " + m.provider.name),
+		llmCredProviderStyle.Render(m.provider.desc),
+		llmCredLabelStyle.Render(fieldLabel),
+		styles.HintStyle.Render("enter confirm  •  esc back"),
+		llmCredInputBoxStyle.Render(m.input.View()),
+	}
 	if m.status != "" {
 		rows = append(rows, llmCredStatusStyle.Render(m.status))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	content := lipgloss.JoinVertical(lipgloss.Center, rows...)
 
-	v := tea.NewView(llmCredContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
 	return v
 }

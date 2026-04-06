@@ -8,30 +8,35 @@ import (
 
 	"opendoc/config"
 	ghauth "opendoc/github"
+	"opendoc/ui/styles"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
-// registrationDoneMsg is emitted by DeviceAuthModel when auth succeeds or fails.
+// registrationDoneMsg is emitted when GitHub auth succeeds or fails.
 type registrationDoneMsg struct {
 	login string
 	err   error
 }
 
+// deviceCodeMsg carries the response from the device-authorization endpoint.
 type deviceCodeMsg struct {
 	code *ghauth.DeviceCodeResponse
 	err  error
 }
 
+// authTokenMsg carries a single token-poll result. An empty token with a nil
+// error means the user hasn't acted yet (authorization_pending).
 type authTokenMsg struct {
 	token string
 	err   error
 }
 
-// DeviceAuthModel is a full-screen TUI that walks the user through the GitHub
-// OAuth device flow. No browser redirect or client secret is required.
+// DeviceAuthModel walks the user through the GitHub OAuth device flow.
+// No browser redirect or client secret is required — the user enters a
+// one-time code at github.com/login/device.
 type DeviceAuthModel struct {
 	cfg        *config.Config
 	clientID   string
@@ -46,6 +51,7 @@ type DeviceAuthModel struct {
 	returnTo   func(cfg *config.Config, w, h int) tea.Model
 }
 
+// NewDeviceAuthModel constructs the auth screen and sets up the purple spinner.
 func NewDeviceAuthModel(cfg *config.Config, clientID string, w, h int, returnTo func(*config.Config, int, int) tea.Model) *DeviceAuthModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -60,10 +66,13 @@ func NewDeviceAuthModel(cfg *config.Config, clientID string, w, h int, returnTo 
 	}
 }
 
+// Init starts the spinner and fires the device-code request immediately.
 func (m *DeviceAuthModel) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.requestDeviceCode())
 }
 
+// requestDeviceCode returns a command that calls the GitHub device-code
+// endpoint and delivers a deviceCodeMsg.
 func (m *DeviceAuthModel) requestDeviceCode() tea.Cmd {
 	clientID := m.clientID
 	return func() tea.Msg {
@@ -72,6 +81,8 @@ func (m *DeviceAuthModel) requestDeviceCode() tea.Cmd {
 	}
 }
 
+// pollToken returns a command that sleeps for the required interval then polls
+// GitHub for the access token, delivering an authTokenMsg.
 func (m *DeviceAuthModel) pollToken() tea.Cmd {
 	clientID := m.clientID
 	deviceCode := m.deviceCode
@@ -83,6 +94,8 @@ func (m *DeviceAuthModel) pollToken() tea.Cmd {
 	}
 }
 
+// Update handles window resizing, OAuth flow messages, and keyboard input.
+// The spinner receives every message it doesn't recognise so it stays animated.
 func (m *DeviceAuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -153,15 +166,10 @@ func (m *DeviceAuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	authTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1).
-			PaddingLeft(2)
-
+	// authHintStyle has a one-line margin (vs the shared HintStyle's two lines)
+	// so the auth screen's tighter layout fits without extra spacing.
 	authHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
-			PaddingLeft(2).
 			MarginBottom(1)
 
 	codeBoxStyle = lipgloss.NewStyle().
@@ -184,31 +192,32 @@ var (
 			Foreground(lipgloss.Color("#7C3AED"))
 
 	authStatusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#10B981")).
-			PaddingLeft(2).
-			MarginTop(1)
+				Foreground(lipgloss.Color("#10B981")).
+				MarginTop(1)
 
 	authErrorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#EF4444")).
-			PaddingLeft(2).
 			MarginTop(1)
-
-	authContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
+// View renders one of three states: an error message, an initial spinner while
+// requesting the device code, or the verification instructions with the
+// one-time code and a polling spinner.
 func (m *DeviceAuthModel) View() tea.View {
 	var rows []string
 
-	rows = append(rows, authTitleStyle.Render("🔑 Connect GitHub"))
+	rows = append(rows, styles.TitleStyle.Render("🔑 Connect GitHub"))
 
-	if m.err != nil {
+	switch {
+	case m.err != nil:
 		rows = append(rows, authErrorStyle.Render(fmt.Sprintf("❌ %v", m.err)))
 		rows = append(rows, authHintStyle.Render("Press esc to go back"))
-	} else if m.userCode == "" {
+
+	case m.userCode == "":
 		rows = append(rows, authHintStyle.Render("Requesting authorization code…"))
-		rows = append(rows, lipgloss.NewStyle().PaddingLeft(2).Render(m.spinner.View()))
-	} else {
+		rows = append(rows, authHintStyle.Render(m.spinner.View()))
+
+	default:
 		rows = append(rows, authHintStyle.Render("1. Your browser should open automatically."))
 		rows = append(rows, authHintStyle.Render("   Or visit: "+authURLStyle.Render(m.verifyURI)))
 		rows = append(rows, authHintStyle.Render("2. Enter the one-time code shown below:"))
@@ -224,16 +233,15 @@ func (m *DeviceAuthModel) View() tea.View {
 		rows = append(rows, authHintStyle.Render("Press esc to cancel"))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	content := lipgloss.JoinVertical(lipgloss.Center, rows...)
 
-	v := tea.NewView(authContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
 	return v
 }
 
+// openURL attempts to open the given URL in the system's default browser.
+// Errors are silently ignored — the user can always type the URL manually.
 func openURL(u string) tea.Cmd {
 	return func() tea.Msg {
 		var cmd *exec.Cmd

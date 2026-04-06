@@ -6,14 +6,17 @@ import (
 	"strings"
 
 	"opendoc/config"
+	"opendoc/ui/styles"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
+// docPathSaveMsg carries the result of persisting the chosen output path.
 type docPathSaveMsg struct{ err error }
 
+// DocPathModel collects the filesystem path where generated docs will be saved.
 type DocPathModel struct {
 	cfg      *config.Config
 	input    textinput.Model
@@ -23,6 +26,8 @@ type DocPathModel struct {
 	returnTo func(*config.Config, int, int) tea.Model
 }
 
+// NewDocPathModel constructs the path input, pre-filled with any previously
+// saved path or the default ~/Documents/opendocs.
 func NewDocPathModel(cfg *config.Config, w, h int, returnTo func(*config.Config, int, int) tea.Model) *DocPathModel {
 	ti := textinput.New()
 	ti.Placeholder = "~/Documents/opendocs"
@@ -44,10 +49,13 @@ func NewDocPathModel(cfg *config.Config, w, h int, returnTo func(*config.Config,
 	}
 }
 
+// Init starts the text-input blink cursor.
 func (m *DocPathModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+// expandPath expands a leading ~/ to the user's home directory. If the home
+// directory cannot be determined the path is returned unchanged.
 func expandPath(p string) string {
 	if strings.HasPrefix(p, "~/") {
 		home, err := os.UserHomeDir()
@@ -58,6 +66,8 @@ func expandPath(p string) string {
 	return p
 }
 
+// Update handles window resizing, the async save result, and keyboard input.
+// Unhandled messages are forwarded to the text input component.
 func (m *DocPathModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -104,56 +114,37 @@ func (m *DocPathModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	docPathTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1).
-				PaddingLeft(2)
-
 	docPathBodyStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#9CA3AF")).
-				PaddingLeft(2).
 				MarginBottom(1)
-
-	docPathHintStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")).
-				PaddingLeft(2).
-				MarginBottom(2)
 
 	docPathInputBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("#7C3AED")).
 				Padding(0, 1).
-				MarginLeft(2).
 				MarginBottom(1)
 
 	docPathStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444")).
-				PaddingLeft(2).
 				MarginTop(1)
-
-	docPathContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
+// View renders the path input form: title, body text, a labeled text input,
+// and an optional status message.
 func (m *DocPathModel) View() tea.View {
-	var rows []string
-
-	rows = append(rows, docPathTitleStyle.Render("📁 Documentation Output Path"))
-	rows = append(rows, docPathBodyStyle.Render("Where should generated documentation be saved?"))
-	rows = append(rows, docPathHintStyle.Render("enter confirm  •  esc back"))
-	rows = append(rows, docPathInputBoxStyle.Render(m.input.View()))
-
+	rows := []string{
+		styles.TitleStyle.Render("📁 Documentation Output Path"),
+		docPathBodyStyle.Render("Where should generated documentation be saved?"),
+		styles.HintStyle.Render("enter confirm  •  esc back"),
+		docPathInputBoxStyle.Render(m.input.View()),
+	}
 	if m.status != "" {
 		rows = append(rows, docPathStatusStyle.Render(m.status))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	content := lipgloss.JoinVertical(lipgloss.Center, rows...)
 
-	v := tea.NewView(docPathContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
 	return v
 }

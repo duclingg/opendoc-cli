@@ -1,3 +1,5 @@
+// Package github implements the GitHub OAuth device flow used to authenticate
+// the user without requiring a client secret or browser redirect.
 package github
 
 import (
@@ -18,21 +20,22 @@ const (
 	Scope = "repo read:org read:user"
 )
 
-// DeviceCodeResponse holds the response from the device authorization endpoint.
+// DeviceCodeResponse holds the response from the device-authorization endpoint.
 type DeviceCodeResponse struct {
 	DeviceCode      string `json:"device_code"`
 	UserCode        string `json:"user_code"`
 	VerificationURI string `json:"verification_uri"`
 	ExpiresIn       int    `json:"expires_in"`
 	// Interval is the minimum number of seconds to wait between poll attempts.
-	Interval        int    `json:"interval"`
-	Error           string `json:"error"`
+	Interval         int    `json:"interval"`
+	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
 
-// RequestDeviceCode starts the device authorization flow.
-// The returned UserCode and VerificationURI should be shown to the user.
-// Only the ClientID is required — no client secret is needed.
+// RequestDeviceCode starts the device-authorization flow by calling the GitHub
+// device-code endpoint. The returned UserCode and VerificationURI must be
+// shown to the user so they can authorize on another device or browser tab.
+// Only the OAuth App ClientID is required — no client secret is needed.
 func RequestDeviceCode(clientID string) (*DeviceCodeResponse, error) {
 	body := url.Values{
 		"client_id": {clientID},
@@ -65,10 +68,11 @@ func RequestDeviceCode(clientID string) (*DeviceCodeResponse, error) {
 	return &result, nil
 }
 
-// PollForToken polls GitHub to check if the user has authorized the device.
+// PollForToken makes a single poll request to the GitHub token endpoint.
 //
-//   - Returns ("", nil) while the user hasn't acted yet (authorization_pending / slow_down).
-//   - Returns (token, nil) once authorization is complete.
+//   - Returns ("", nil) while authorization is still pending
+//     (authorization_pending or slow_down — the caller should retry).
+//   - Returns (token, nil) once the user has authorized the device.
 //   - Returns ("", err) on denial, expiry, or any other terminal error.
 func PollForToken(clientID, deviceCode string) (string, error) {
 	body := url.Values{
@@ -91,8 +95,8 @@ func PollForToken(clientID, deviceCode string) (string, error) {
 	defer resp.Body.Close()
 
 	var result struct {
-		AccessToken     string `json:"access_token"`
-		Error           string `json:"error"`
+		AccessToken      string `json:"access_token"`
+		Error            string `json:"error"`
 		ErrorDescription string `json:"error_description"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -113,7 +117,8 @@ func PollForToken(clientID, deviceCode string) (string, error) {
 	}
 }
 
-// FetchAuthenticatedUser returns the GitHub login for the given OAuth token.
+// FetchAuthenticatedUser returns the GitHub login name for the given OAuth
+// access token by calling the /user REST endpoint.
 func FetchAuthenticatedUser(token string) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, userURL, nil)
 	if err != nil {

@@ -4,23 +4,31 @@ import (
 	"fmt"
 
 	"opendoc/config"
+	"opendoc/ui/listutil"
 	"opendoc/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
+// footerH is the number of terminal lines reserved at the bottom of every
+// setup screen for status messages and breathing room.
+const footerH = 2
+
+// setupStep describes a single required configuration step in the wizard.
 type setupStep struct {
 	label string
 	desc  string
 	done  func(*config.Config) bool
 }
 
+// setupSteps is the ordered list of steps the user must complete before the
+// wizard considers itself done.
 var setupSteps = []setupStep{
 	{
 		label: "Authorize GitHub",
 		desc:  "Connect your GitHub account via OAuth device flow",
-		done:  func(c *config.Config) bool { return c.IsGitHubSetUp() },
+		done:  func(c *config.Config) bool { return c.IsRegistered() },
 	},
 	{
 		label: "Setup LLM provider",
@@ -39,17 +47,22 @@ var setupSteps = []setupStep{
 	},
 }
 
+// SetupModel is the setup wizard checklist screen. It shows every required
+// step with a done/pending indicator and a "Start" item at the bottom.
 type SetupModel struct {
-	cfg        *config.Config
-	cursor     int
-	width      int
-	height     int
-	status     string
-	onComplete func(*config.Config, int, int) tea.Model
+	cfg          *config.Config
+	cursor       int
+	width        int
+	height       int
+	status       string
+	scrollOffset int
+	onComplete   func(*config.Config, int, int) tea.Model
 }
 
+// NewSetupModel creates a SetupModel with the cursor pre-positioned on the
+// first incomplete step. onComplete is called when the user selects "Start".
 func NewSetupModel(cfg *config.Config, w, h int, onComplete func(*config.Config, int, int) tea.Model) *SetupModel {
-	cursor := len(setupSteps) // default to Start
+	cursor := len(setupSteps) // default to the Start item
 	for i, step := range setupSteps {
 		if !step.done(cfg) {
 			cursor = i
@@ -60,20 +73,27 @@ func NewSetupModel(cfg *config.Config, w, h int, onComplete func(*config.Config,
 		// Callers must supply onComplete; fall back to quitting rather than panicking.
 		onComplete = func(_ *config.Config, _, _ int) tea.Model { return nil }
 	}
-	return &SetupModel{cfg: cfg, width: w, height: h, cursor: cursor, onComplete: onComplete}
+	m := &SetupModel{cfg: cfg, width: w, height: h, cursor: cursor, onComplete: onComplete}
+	m.updateScroll()
+	return m
 }
 
+// Init satisfies tea.Model; the setup list requires no initial commands.
 func (m *SetupModel) Init() tea.Cmd { return nil }
 
-func (m *SetupModel) totalItems() int { return len(setupSteps) + 1 } // steps + Start
+// totalItems returns the count of navigable rows (steps + the Start item).
+func (m *SetupModel) totalItems() int { return len(setupSteps) + 1 }
 
+// isStartIdx reports whether index i points to the Start item.
 func (m *SetupModel) isStartIdx(i int) bool { return i == len(setupSteps) }
 
+// Update handles window resizing, keyboard navigation, and step selection.
 func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.updateScroll()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -84,12 +104,14 @@ func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 				m.status = ""
+				m.updateScroll()
 			}
 
 		case "down", "j":
 			if m.cursor < m.totalItems()-1 {
 				m.cursor++
 				m.status = ""
+				m.updateScroll()
 			}
 
 		case "enter", " ":
@@ -100,6 +122,9 @@ func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// selfReturnTo returns a returnTo callback that recreates this SetupModel,
+// preserving the original onComplete handler. Sub-screens use it to navigate
+// back to the wizard after finishing a step.
 func (m *SetupModel) selfReturnTo() func(*config.Config, int, int) tea.Model {
 	onComplete := m.onComplete
 	return func(c *config.Config, w, h int) tea.Model {
@@ -107,12 +132,13 @@ func (m *SetupModel) selfReturnTo() func(*config.Config, int, int) tea.Model {
 	}
 }
 
+// handleSelect launches the sub-screen for the selected step, or calls
+// onComplete when the user activates the Start item. Pressing Start also
+// persists the SetupDismissed flag so future launches skip the wizard.
 func (m *SetupModel) handleSelect() (tea.Model, tea.Cmd) {
 	if m.isStartIdx(m.cursor) {
-		if !m.cfg.IsFullySetUp() {
-			m.status = "Complete all steps above before starting"
-			return m, nil
-		}
+		m.cfg.SetupDismissed = true
+		_ = m.cfg.Save() // best-effort; failure should not block the transition
 		next := m.onComplete(m.cfg, m.width, m.height)
 		if next == nil {
 			return m, tea.Quit
@@ -146,24 +172,85 @@ func (m *SetupModel) handleSelect() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// renderHeader builds the title, subtitle, and keyboard-hint block shown
+// above the step list.
+func (m *SetupModel) renderHeader() string {
+	return lipgloss.JoinVertical(lipgloss.Center,
+		styles.TitleStyle.Render("📄 opendoc — Setup"),
+		setupSubtitleStyle.Render("Complete each step to get started"),
+		styles.HintStyle.Render("↑/↓ navigate  •  enter select  •  q quit"),
+	)
+}
+
+// buildListContent renders every step row plus the Start item and returns the
+// joined list string together with the cursor item's top line and height.
+// These are used by updateScroll to keep the focused row visible.
+func (m *SetupModel) buildListContent() (list string, cursorLine int, cursorItemH int) {
+	var rows []string
+	lineCount := 0
+
+	for i, step := range setupSteps {
+		if i == m.cursor {
+			cursorLine = lineCount
+		}
+		done := step.done(m.cfg)
+
+		var checkmark, titleStr string
+		if done {
+			checkmark = stepDoneStyle.Render("[✓]")
+			titleStr = stepDoneStyle.Render(step.label)
+		} else {
+			checkmark = stepPendingStyle.Render("[ ]")
+			titleStr = styles.ItemTitleNormal.Render(step.label)
+		}
+		label := checkmark + " " + titleStr + "\n    " + styles.ItemDescStyle.Render(step.desc)
+
+		var row string
+		if i == m.cursor {
+			row = styles.ItemSelected.Render(label)
+		} else {
+			row = styles.ItemNormal.Render(label)
+		}
+		rows = append(rows, row)
+		h := lipgloss.Height(row)
+		if i == m.cursor {
+			cursorItemH = h
+		}
+		lineCount += h
+	}
+
+	// Start item
+	startTitle := startEnabledTitleStyle.Render("▶  Start")
+	if m.isStartIdx(m.cursor) {
+		cursorLine = lineCount
+		row := styles.ItemSelected.Render(startTitle)
+		cursorItemH = lipgloss.Height(row)
+		rows = append(rows, row)
+	} else {
+		rows = append(rows, styles.ItemNormal.Render(startTitle))
+	}
+
+	list = lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return list, cursorLine, cursorItemH
+}
+
+// updateScroll adjusts scrollOffset so the focused row stays within the
+// visible viewport.
+func (m *SetupModel) updateScroll() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
+	_, cursorLine, cursorItemH := m.buildListContent()
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
+}
+
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	setupTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1).
-			PaddingLeft(2)
-
 	setupSubtitleStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#A78BFA")).
-				PaddingLeft(2).
 				MarginBottom(2)
-
-	setupHintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6B7280")).
-			PaddingLeft(2).
-			MarginBottom(2)
 
 	stepDoneStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#10B981")).
@@ -176,77 +263,26 @@ var (
 				Bold(true).
 				Foreground(lipgloss.Color("#10B981"))
 
-	startDisabledTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#4B5563"))
-
 	setupStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#F59E0B")).
-				PaddingLeft(2).
 				MarginTop(1)
-
-	setupContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
+// View renders the setup wizard: header, scrollable step list, and an optional
+// status message.
 func (m *SetupModel) View() tea.View {
-	var rows []string
+	header := m.renderHeader()
+	availH := m.height - lipgloss.Height(header) - footerH
+	list, _, _ := m.buildListContent()
+	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 
-	rows = append(rows, setupTitleStyle.Render("📄 OpenDoc — Setup"))
-	rows = append(rows, setupSubtitleStyle.Render("Complete each step to get started"))
-	rows = append(rows, setupHintStyle.Render("↑/↓ navigate  •  enter select  •  q quit"))
-
-	for i, step := range setupSteps {
-		done := step.done(m.cfg)
-
-		var checkmark, titleStr, descStr string
-		if done {
-			checkmark = stepDoneStyle.Render("[✓]")
-			titleStr = stepDoneStyle.Render(step.label)
-		} else {
-			checkmark = stepPendingStyle.Render("[ ]")
-			titleStr = styles.ItemTitleNormal.Render(step.label)
-		}
-		descStr = styles.ItemDescStyle.Render(step.desc)
-
-		label := checkmark + " " + titleStr + "\n    " + descStr
-
-		var row string
-		if i == m.cursor {
-			row = styles.ItemSelected.Render(label)
-		} else {
-			row = styles.ItemNormal.Render(label)
-		}
-		rows = append(rows, row)
-	}
-
-	// Start item
-	startIdx := len(setupSteps)
-	allDone := m.cfg.IsFullySetUp()
-	var startTitle string
-	if allDone {
-		startTitle = startEnabledTitleStyle.Render("▶  Start")
-	} else {
-		startTitle = startDisabledTitleStyle.Render("▶  Start")
-	}
-
-	var startRow string
-	if m.cursor == startIdx {
-		startRow = styles.ItemSelected.Render(startTitle)
-	} else {
-		startRow = styles.ItemNormal.Render(startTitle)
-	}
-	rows = append(rows, startRow)
-
+	parts := []string{header, centeredList}
 	if m.status != "" {
-		rows = append(rows, setupStatusStyle.Render(m.status))
+		parts = append(parts, setupStatusStyle.Render(m.status))
 	}
+	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-
-	v := tea.NewView(setupContainerStyle.
-		Width(m.width).
-		Height(m.height).
-		Render(content))
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
 	return v
 }

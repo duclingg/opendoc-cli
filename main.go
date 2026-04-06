@@ -1,3 +1,7 @@
+// Command opendoc is a terminal UI for opendoc — a CLI-based open-source
+// documentation manager. It loads the user config and hands control to the
+// Bubble Tea program, which routes to the setup wizard or the main menu
+// depending on whether setup has been completed.
 package main
 
 import (
