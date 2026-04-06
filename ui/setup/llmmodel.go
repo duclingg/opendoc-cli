@@ -252,8 +252,12 @@ func (m *LLMModelModel) View() tea.View {
 		content = lipgloss.JoinVertical(lipgloss.Center, rows...)
 	} else {
 		header := m.renderHeader()
-		body := m.vp.View()
-		parts := []string{header, body}
+		list, _ := m.buildListContent()
+		centeredList := lipgloss.NewStyle().
+			Width(m.width).
+			Align(lipgloss.Center).
+			Render(list)
+		parts := []string{header, centeredList}
 		if m.status != "" {
 			parts = append(parts, llmModelStatusStyle.Render(m.status))
 		}

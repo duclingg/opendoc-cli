@@ -226,8 +226,15 @@ var (
 
 func (m *MenuModel) View() tea.View {
 	header := m.renderHeader()
-	body := m.vp.View()
-	parts := []string{header, body}
+	list, _ := m.buildListContent()
+
+	// measure the natural width of the list block and center it as a unit
+	centeredList := lipgloss.NewStyle().
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render(list)
+
+	parts := []string{header, centeredList}
 	if m.status != "" {
 		parts = append(parts, statusStyle.Render(m.status))
 	}

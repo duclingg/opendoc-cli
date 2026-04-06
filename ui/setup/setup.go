@@ -254,13 +254,11 @@ func (m *SetupModel) View() tea.View {
 	list, _ := m.buildListContent()
 
 	// measure the natural width of the list block and center it as a unit
-	listW := lipgloss.Width(list)
 	centeredList := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
 		Render(list)
 
-	_ = listW // just for clarity
 	parts := []string{header, centeredList}
 	if m.status != "" {
 		parts = append(parts, setupStatusStyle.Render(m.status))

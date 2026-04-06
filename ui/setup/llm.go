@@ -242,8 +242,13 @@ var (
 
 func (m *LLMSetupModel) View() tea.View {
 	header := m.renderHeader()
-	body := m.vp.View()
-	content := lipgloss.JoinVertical(lipgloss.Center, header, body)
+	list, _ := m.buildListContent()
+	centeredList := lipgloss.NewStyle().
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render(list)
+	parts := []string{header, centeredList}
+	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
