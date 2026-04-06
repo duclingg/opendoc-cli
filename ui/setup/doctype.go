@@ -2,8 +2,7 @@ package setup
 
 import (
 	"opendoc/config"
-	"opendoc/ui/lineutil"
-	"opendoc/ui/styles"
+	"opendoc/ui/listutil"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -89,12 +88,12 @@ func (m *DocTypeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *DocTypeModel) contentWidth() int {
-	const maxWidth = 80
-	if m.width < maxWidth {
-		return m.width
+func docTypeItems() []listutil.Item {
+	items := make([]listutil.Item, len(docTypeOptions))
+	for i, opt := range docTypeOptions {
+		items[i] = listutil.Item{Title: opt.label, Desc: opt.desc}
 	}
-	return maxWidth
+	return items
 }
 
 func (m *DocTypeModel) renderHeader() string {
@@ -104,58 +103,14 @@ func (m *DocTypeModel) renderHeader() string {
 	)
 }
 
-func (m *DocTypeModel) buildListContent() (string, int) {
-	var rows []string
-	lineCount := 0
-	cursorLine := 0
-
-	for i, opt := range docTypeOptions {
-		if i == m.cursor {
-			cursorLine = lineCount
-		}
-
-		var row string
-		if i == m.cursor {
-			title := styles.ItemTitleSelected.Render(opt.label)
-			desc := styles.ItemDescStyle.Render(opt.desc)
-			row = styles.ItemSelected.Render(title + "\n" + desc)
-		} else {
-			title := styles.ItemTitleNormal.Render(opt.label)
-			desc := styles.ItemDescStyle.Render(opt.desc)
-			row = styles.ItemNormal.Render(title + "\n" + desc)
-		}
-		rows = append(rows, row)
-		lineCount += lipgloss.Height(row)
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
-}
-
-func (m *DocTypeModel) cursorItemHeight() int {
-	opt := docTypeOptions[m.cursor]
-	title := styles.ItemTitleSelected.Render(opt.label)
-	desc := styles.ItemDescStyle.Render(opt.desc)
-	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
-}
-
 func (m *DocTypeModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	header := m.renderHeader()
 	const footerH = 2
-	availH := m.height - lipgloss.Height(header) - footerH
-	_, cursorLine := m.buildListContent()
-	cursorItemH := m.cursorItemHeight()
-	if cursorLine < m.scrollOffset {
-		m.scrollOffset = cursorLine
-	}
-	if cursorLine+cursorItemH > m.scrollOffset+availH {
-		m.scrollOffset = cursorLine + cursorItemH - availH
-	}
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
-	}
+	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
+	_, cursorLine, cursorItemH := listutil.RenderItems(docTypeItems(), m.cursor)
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -179,12 +134,9 @@ func (m *DocTypeModel) View() tea.View {
 	header := m.renderHeader()
 	const footerH = 2
 	availH := m.height - lipgloss.Height(header) - footerH
-	list, _ := m.buildListContent()
-	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
-	centeredList := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(clipped)
+	list, _, _ := listutil.RenderItems(docTypeItems(), m.cursor)
+	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
+
 	parts := []string{header, centeredList}
 	if m.status != "" {
 		parts = append(parts, docTypeStatusStyle.Render(m.status))

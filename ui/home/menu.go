@@ -4,21 +4,15 @@ import (
 	"fmt"
 
 	"opendoc/config"
-	"opendoc/ui/lineutil"
-	"opendoc/ui/styles"
+	"opendoc/ui/listutil"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
-type menuItem struct {
-	title string
-	desc  string
-}
-
 type MenuModel struct {
 	cfg          *config.Config
-	items        []menuItem
+	items        []listutil.Item
 	cursor       int
 	width        int
 	height       int
@@ -37,10 +31,10 @@ func NewMenuModel(cfg *config.Config, w, h int) *MenuModel {
 	return m
 }
 
-func buildMenuItems(_ *config.Config) []menuItem {
-	return []menuItem{
-		{title: "Settings", desc: "Manage app configuration and re-setup options"},
-		{title: "Quit", desc: "Exit the application"},
+func buildMenuItems(_ *config.Config) []listutil.Item {
+	return []listutil.Item{
+		{Title: "Settings", Desc: "Manage app configuration and re-setup options"},
+		{Title: "Quit", Desc: "Exit the application"},
 	}
 }
 
@@ -124,14 +118,6 @@ func (m *MenuModel) renderStatusBar() string {
 	)
 }
 
-func (m *MenuModel) contentWidth() int {
-	const maxWidth = 80
-	if m.width < maxWidth {
-		return m.width
-	}
-	return maxWidth
-}
-
 func (m *MenuModel) renderHeader() string {
 	return lipgloss.JoinVertical(lipgloss.Center,
 		menuTitleStyle.Render("📄 opendoc cli"),
@@ -140,58 +126,14 @@ func (m *MenuModel) renderHeader() string {
 	)
 }
 
-func (m *MenuModel) buildListContent() (string, int) {
-	var rows []string
-	lineCount := 0
-	cursorLine := 0
-
-	for i, item := range m.items {
-		if i == m.cursor {
-			cursorLine = lineCount
-		}
-
-		var row string
-		if i == m.cursor {
-			title := styles.ItemTitleSelected.Render(item.title)
-			desc := styles.ItemDescStyle.Render(item.desc)
-			row = styles.ItemSelected.Render(title + "\n" + desc)
-		} else {
-			title := styles.ItemTitleNormal.Render(item.title)
-			desc := styles.ItemDescStyle.Render(item.desc)
-			row = styles.ItemNormal.Render(title + "\n" + desc)
-		}
-		rows = append(rows, row)
-		lineCount += lipgloss.Height(row)
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
-}
-
-func (m *MenuModel) cursorItemHeight() int {
-	item := m.items[m.cursor]
-	title := styles.ItemTitleSelected.Render(item.title)
-	desc := styles.ItemDescStyle.Render(item.desc)
-	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
-}
-
 func (m *MenuModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	header := m.renderHeader()
 	const footerH = 2
-	availH := m.height - lipgloss.Height(header) - footerH
-	_, cursorLine := m.buildListContent()
-	cursorItemH := m.cursorItemHeight()
-	if cursorLine < m.scrollOffset {
-		m.scrollOffset = cursorLine
-	}
-	if cursorLine+cursorItemH > m.scrollOffset+availH {
-		m.scrollOffset = cursorLine + cursorItemH - availH
-	}
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
-	}
+	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
+	_, cursorLine, cursorItemH := listutil.RenderItems(m.items, m.cursor)
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -240,13 +182,8 @@ func (m *MenuModel) View() tea.View {
 	header := m.renderHeader()
 	const footerH = 2
 	availH := m.height - lipgloss.Height(header) - footerH
-	list, _ := m.buildListContent()
-	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
-
-	centeredList := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(clipped)
+	list, _, _ := listutil.RenderItems(m.items, m.cursor)
+	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 
 	parts := []string{header, centeredList}
 	if m.status != "" {

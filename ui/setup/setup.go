@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"opendoc/config"
-	"opendoc/ui/lineutil"
+	"opendoc/ui/listutil"
 	"opendoc/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
@@ -149,14 +149,6 @@ func (m *SetupModel) handleSelect() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *SetupModel) contentWidth() int {
-	const maxWidth = 80
-	if m.width < maxWidth {
-		return m.width
-	}
-	return maxWidth
-}
-
 func (m *SetupModel) renderHeader() string {
 	return lipgloss.JoinVertical(lipgloss.Center, // was Left
 		setupTitleStyle.Render("📄 OpenDoc — Setup"),
@@ -212,25 +204,10 @@ func (m *SetupModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	header := m.renderHeader()
 	const footerH = 2
-	availH := m.height - lipgloss.Height(header) - footerH
-
+	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
 	_, cursorLine := m.buildListContent()
-
-	// figure out the height of the cursor item so we scroll enough
-	// to show the whole item, not just its first line
-	cursorItemH := m.cursorItemHeight()
-
-	if cursorLine < m.scrollOffset {
-		m.scrollOffset = cursorLine
-	}
-	if cursorLine+cursorItemH > m.scrollOffset+availH {
-		m.scrollOffset = cursorLine + cursorItemH - availH
-	}
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
-	}
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, m.cursorItemHeight())
 }
 
 func (m *SetupModel) cursorItemHeight() int {
@@ -292,12 +269,7 @@ func (m *SetupModel) View() tea.View {
 	const footerH = 2
 	availH := m.height - lipgloss.Height(header) - footerH
 	list, _ := m.buildListContent()
-	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
-
-	centeredList := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(clipped)
+	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 
 	parts := []string{header, centeredList}
 	if m.status != "" {

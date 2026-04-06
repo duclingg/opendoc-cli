@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"opendoc/config"
-	"opendoc/ui/lineutil"
+	"opendoc/ui/listutil"
 	"opendoc/ui/setup"
 	"opendoc/ui/styles"
 
@@ -31,18 +31,13 @@ type SettingsModel struct {
 	scrollOffset int
 }
 
-type settingsItem struct {
-	title string
-	desc  string
-}
-
-var settingsItems = []settingsItem{
-	{"Re-connect GitHub", "Re-authorize with your GitHub account or organization"},
-	{"Change LLM Provider", "Update your AI provider configuration"},
-	{"Change Doc Output Type", "Update the format for generated documentation"},
-	{"Change Doc Output Path", "Update the directory where documentation will be written"},
-	{"Reset All Settings", "Wipe all persisted configuration data"},
-	{"← Back", "Return to the main menu"},
+var settingsItems = []listutil.Item{
+	{Title: "Re-connect GitHub", Desc: "Re-authorize with your GitHub account or organization"},
+	{Title: "Change LLM Provider", Desc: "Update your AI provider configuration"},
+	{Title: "Change Doc Output Type", Desc: "Update the format for generated documentation"},
+	{Title: "Change Doc Output Path", Desc: "Update the directory where documentation will be written"},
+	{Title: "Reset All Settings", Desc: "Wipe all persisted configuration data"},
+	{Title: "← Back", Desc: "Return to the main menu"},
 }
 
 func NewSettingsModel(cfg *config.Config, w, h int) *SettingsModel {
@@ -170,66 +165,14 @@ func (m *SettingsModel) renderHeader() string {
 	return lipgloss.JoinVertical(lipgloss.Center, rows...)
 }
 
-func (m *SettingsModel) buildListContent() (string, int) {
-	var rows []string
-	lineCount := 0
-	cursorLine := 0
-
-	for i, item := range settingsItems {
-		if i == m.cursor {
-			cursorLine = lineCount
-		}
-
-		var row string
-		if i == m.cursor {
-			title := styles.ItemTitleSelected.Render(item.title)
-			desc := styles.ItemDescStyle.Render(item.desc)
-			row = styles.ItemSelected.Render(title + "\n" + desc)
-		} else {
-			title := styles.ItemTitleNormal.Render(item.title)
-			desc := styles.ItemDescStyle.Render(item.desc)
-			row = styles.ItemNormal.Render(title + "\n" + desc)
-		}
-		rows = append(rows, row)
-		lineCount += lipgloss.Height(row)
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
-}
-
-func (m *SettingsModel) contentWidth() int {
-	const maxWidth = 80
-	if m.width < maxWidth {
-		return m.width
-	}
-	return maxWidth
-}
-
-func (m *SettingsModel) cursorItemHeight() int {
-	item := settingsItems[m.cursor]
-	title := styles.ItemTitleSelected.Render(item.title)
-	desc := styles.ItemDescStyle.Render(item.desc)
-	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
-}
-
 func (m *SettingsModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	header := m.renderHeader()
 	const footerH = 2
-	availH := m.height - lipgloss.Height(header) - footerH
-	_, cursorLine := m.buildListContent()
-	cursorItemH := m.cursorItemHeight()
-	if cursorLine < m.scrollOffset {
-		m.scrollOffset = cursorLine
-	}
-	if cursorLine+cursorItemH > m.scrollOffset+availH {
-		m.scrollOffset = cursorLine + cursorItemH - availH
-	}
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
-	}
+	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
+	_, cursorLine, cursorItemH := listutil.RenderItems(settingsItems, m.cursor)
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -282,13 +225,8 @@ func (m *SettingsModel) View() tea.View {
 	header := m.renderHeader()
 	const footerH = 2
 	availH := m.height - lipgloss.Height(header) - footerH
-	list, _ := m.buildListContent()
-	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
-
-	centeredList := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(clipped)
+	list, _, _ := listutil.RenderItems(settingsItems, m.cursor)
+	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 
 	parts := []string{header, centeredList}
 	if m.status != "" {

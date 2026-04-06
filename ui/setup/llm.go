@@ -2,7 +2,7 @@ package setup
 
 import (
 	"opendoc/config"
-	"opendoc/ui/lineutil"
+	"opendoc/ui/listutil"
 	"opendoc/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
@@ -194,14 +194,6 @@ func (m *LLMSetupModel) buildListContent() (string, int) {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
 }
 
-func (m *LLMSetupModel) contentWidth() int {
-	const maxWidth = 80
-	if m.width < maxWidth {
-		return m.width
-	}
-	return maxWidth
-}
-
 func (m *LLMSetupModel) cursorItemHeight() int {
 	p := llmProviders[m.cursor]
 	var indicator string
@@ -219,19 +211,9 @@ func (m *LLMSetupModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	header := m.renderHeader()
-	availH := m.height - lipgloss.Height(header)
+	availH := m.height - lipgloss.Height(m.renderHeader())
 	_, cursorLine := m.buildListContent()
-	cursorItemH := m.cursorItemHeight()
-	if cursorLine < m.scrollOffset {
-		m.scrollOffset = cursorLine
-	}
-	if cursorLine+cursorItemH > m.scrollOffset+availH {
-		m.scrollOffset = cursorLine + cursorItemH - availH
-	}
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
-	}
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, m.cursorItemHeight())
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -262,13 +244,8 @@ func (m *LLMSetupModel) View() tea.View {
 	header := m.renderHeader()
 	availH := m.height - lipgloss.Height(header)
 	list, _ := m.buildListContent()
-	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
-	centeredList := lipgloss.NewStyle().
-		Width(m.width).
-		Align(lipgloss.Center).
-		Render(clipped)
-	parts := []string{header, centeredList}
-	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
+	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
+	content := lipgloss.JoinVertical(lipgloss.Center, header, centeredList)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
