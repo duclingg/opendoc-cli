@@ -4,12 +4,14 @@ import "charm.land/lipgloss/v2"
 
 var (
 	ItemNormal = lipgloss.NewStyle().
-			PaddingLeft(4).
+			PaddingLeft(3). // 3 = 2 pad + 1 "phantom" to match border width
+			PaddingRight(3).
 			PaddingTop(1).
 			PaddingBottom(1)
 
 	ItemSelected = lipgloss.NewStyle().
 			PaddingLeft(2).
+			PaddingRight(3).
 			PaddingTop(1).
 			PaddingBottom(1).
 			Border(lipgloss.NormalBorder(), false, false, false, true).

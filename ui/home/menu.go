@@ -120,7 +120,7 @@ func (m *MenuModel) renderStatusBar() string {
 	}
 
 	inner := fmt.Sprintf("%s  %s", ghVal, llmVal)
-	return lipgloss.NewStyle().PaddingLeft(2).MarginBottom(1).Render(
+	return lipgloss.NewStyle().MarginBottom(1).Render(
 		statusBarStyle.Render(inner),
 	)
 }
@@ -134,7 +134,7 @@ func (m *MenuModel) contentWidth() int {
 }
 
 func (m *MenuModel) renderHeader() string {
-	return lipgloss.JoinVertical(lipgloss.Left,
+	return lipgloss.JoinVertical(lipgloss.Center,
 		menuTitleStyle.Render("📄 opendoc cli"),
 		menuHintStyle.Render("↑/↓ navigate  •  enter select  •  q quit"),
 		m.renderStatusBar(),
@@ -188,12 +188,10 @@ var (
 	menuTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1).
-			PaddingLeft(2)
+			MarginBottom(1)
 
 	menuHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
-			PaddingLeft(2).
 			MarginBottom(0)
 
 	statusBarStyle = lipgloss.NewStyle().
@@ -213,7 +211,7 @@ var (
 				Bold(true)
 
 	statusDotOnStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#10B981"))
+				Foreground(lipgloss.Color("#10B981"))
 
 	statusDotOffStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#F59E0B"))
@@ -223,7 +221,6 @@ var (
 
 	statusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#10B981")).
-			PaddingLeft(2).
 			MarginTop(1)
 )
 
@@ -234,7 +231,7 @@ func (m *MenuModel) View() tea.View {
 	if m.status != "" {
 		parts = append(parts, statusStyle.Render(m.status))
 	}
-	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

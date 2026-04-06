@@ -99,7 +99,7 @@ func (m *DocTypeModel) contentWidth() int {
 }
 
 func (m *DocTypeModel) renderHeader() string {
-	return lipgloss.JoinVertical(lipgloss.Left,
+	return lipgloss.JoinVertical(lipgloss.Center,
 		docTypeTitleStyle.Render("📝 Documentation Output Type"),
 		docTypeHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
 	)
@@ -152,17 +152,14 @@ var (
 	docTypeTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1).
-				PaddingLeft(2)
+				MarginBottom(1)
 
 	docTypeHintStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#6B7280")).
-				PaddingLeft(2).
 				MarginBottom(2)
 
 	docTypeStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444")).
-				PaddingLeft(2).
 				MarginTop(1)
 )
 
@@ -173,7 +170,7 @@ func (m *DocTypeModel) View() tea.View {
 	if m.status != "" {
 		parts = append(parts, docTypeStatusStyle.Render(m.status))
 	}
-	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

@@ -159,7 +159,7 @@ func (m *SetupModel) contentWidth() int {
 }
 
 func (m *SetupModel) renderHeader() string {
-	return lipgloss.JoinVertical(lipgloss.Left,
+	return lipgloss.JoinVertical(lipgloss.Center, // was Left
 		setupTitleStyle.Render("📄 OpenDoc — Setup"),
 		setupSubtitleStyle.Render("Complete each step to get started"),
 		setupHintStyle.Render("↑/↓ navigate  •  enter select  •  q quit"),
@@ -168,14 +168,8 @@ func (m *SetupModel) renderHeader() string {
 
 func (m *SetupModel) buildListContent() (string, int) {
 	var rows []string
-	lineCount := 0
-	cursorLine := 0
 
 	for i, step := range setupSteps {
-		if i == m.cursor {
-			cursorLine = lineCount
-		}
-
 		done := step.done(m.cfg)
 		var checkmark, titleStr string
 		if done {
@@ -188,31 +182,22 @@ func (m *SetupModel) buildListContent() (string, int) {
 		descStr := styles.ItemDescStyle.Render(step.desc)
 		label := checkmark + " " + titleStr + "\n    " + descStr
 
-		var row string
 		if i == m.cursor {
-			row = styles.ItemSelected.Render(label)
+			rows = append(rows, styles.ItemSelected.Render(label))
 		} else {
-			row = styles.ItemNormal.Render(label)
+			rows = append(rows, styles.ItemNormal.Render(label))
 		}
-		rows = append(rows, row)
-		lineCount += lipgloss.Height(row)
 	}
 
-	// Start item
-	startIdx := len(setupSteps)
-	if m.cursor == startIdx {
-		cursorLine = lineCount
-	}
 	startTitle := startEnabledTitleStyle.Render("▶  Start")
-	var startRow string
-	if m.cursor == startIdx {
-		startRow = styles.ItemSelected.Render(startTitle)
+	if m.cursor == len(setupSteps) {
+		rows = append(rows, styles.ItemSelected.Render(startTitle))
 	} else {
-		startRow = styles.ItemNormal.Render(startTitle)
+		rows = append(rows, styles.ItemNormal.Render(startTitle))
 	}
-	rows = append(rows, startRow)
 
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
+	list := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return list, 0
 }
 
 func (m *SetupModel) syncViewport() {
@@ -235,17 +220,14 @@ var (
 	setupTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1).
-			PaddingLeft(2)
+			MarginBottom(1)
 
 	setupSubtitleStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#A78BFA")).
-				PaddingLeft(2).
 				MarginBottom(2)
 
 	setupHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
-			PaddingLeft(2).
 			MarginBottom(2)
 
 	stepDoneStyle = lipgloss.NewStyle().
@@ -264,18 +246,26 @@ var (
 
 	setupStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#F59E0B")).
-				PaddingLeft(2).
 				MarginTop(1)
 )
 
 func (m *SetupModel) View() tea.View {
 	header := m.renderHeader()
-	body := m.vp.View()
-	parts := []string{header, body}
+	list, _ := m.buildListContent()
+
+	// measure the natural width of the list block and center it as a unit
+	listW := lipgloss.Width(list)
+	centeredList := lipgloss.NewStyle().
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render(list)
+
+	_ = listW // just for clarity
+	parts := []string{header, centeredList}
 	if m.status != "" {
 		parts = append(parts, setupStatusStyle.Render(m.status))
 	}
-	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

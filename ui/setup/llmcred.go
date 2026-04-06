@@ -93,8 +93,10 @@ func (m *LLMCredModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cfg := m.cfg
 			provider := m.provider
 			return m, func() tea.Msg {
+				if cfg.LLMProvider != provider.id {
+					cfg.LLMModel = "" // clear model only when switching providers
+				}
 				cfg.LLMProvider = provider.id
-				cfg.LLMModel = "" // cleared — user must pick model in next step
 				if provider.local {
 					cfg.LLMBaseURL = val
 					cfg.LLMAPIKey = ""
@@ -118,34 +120,28 @@ var (
 	llmCredTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1).
-				PaddingLeft(2)
+				MarginBottom(1)
 
 	llmCredProviderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#A78BFA")).
-				PaddingLeft(2).
 				MarginBottom(1)
 
 	llmCredLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#E5E7EB")).
-				PaddingLeft(2).
 				MarginBottom(1)
 
 	llmCredHintStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#6B7280")).
-				PaddingLeft(2).
 				MarginBottom(2)
 
 	llmCredInputBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("#7C3AED")).
 				Padding(0, 1).
-				MarginLeft(2).
 				MarginBottom(1)
 
 	llmCredStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444")).
-				PaddingLeft(2).
 				MarginTop(1)
 
 	llmCredContainerStyle = lipgloss.NewStyle().
@@ -171,7 +167,7 @@ func (m *LLMCredModel) View() tea.View {
 		rows = append(rows, llmCredStatusStyle.Render(m.status))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	content := lipgloss.JoinVertical(lipgloss.Center, rows...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

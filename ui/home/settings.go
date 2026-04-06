@@ -166,9 +166,9 @@ func (m *SettingsModel) renderHeader() string {
 	rows = append(rows, settingsHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"))
 	if m.cfg.IsRegistered() {
 		info := styles.ItemDescStyle.Render(fmt.Sprintf("GitHub: %s", m.cfg.GitHubLogin))
-		rows = append(rows, lipgloss.NewStyle().PaddingLeft(2).MarginBottom(1).Render(info))
+		rows = append(rows, lipgloss.NewStyle().MarginBottom(1).Render(info))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return lipgloss.JoinVertical(lipgloss.Center, rows...)
 }
 
 func (m *SettingsModel) buildListContent() (string, int) {
@@ -226,20 +226,17 @@ var (
 	settingsTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1).
-				PaddingLeft(2)
+				MarginBottom(1)
 
 	settingsHintStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#6B7280")).
-				PaddingLeft(2).
 				MarginBottom(2)
 
 	confirmBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#F59E0B")).
 			Padding(1, 2).
-			MarginTop(1).
-			MarginLeft(2)
+			MarginTop(1)
 
 	confirmTitleStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -251,7 +248,6 @@ var (
 
 	settingsStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#10B981")).
-				PaddingLeft(2).
 				MarginTop(1)
 )
 
@@ -259,7 +255,7 @@ func (m *SettingsModel) View() tea.View {
 	if m.confirm == confirmReset {
 		dialog := confirmBoxStyle.Render(
 			lipgloss.JoinVertical(
-				lipgloss.Left,
+				lipgloss.Center,
 				confirmTitleStyle.Render("⚠️  Confirm Reset"),
 				confirmTextStyle.Render("This will wipe all persisted configuration data."),
 				confirmTextStyle.Render(""),
@@ -277,7 +273,7 @@ func (m *SettingsModel) View() tea.View {
 	if m.status != "" {
 		parts = append(parts, settingsStatusStyle.Render(m.status))
 	}
-	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

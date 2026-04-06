@@ -142,7 +142,7 @@ func (m *LLMSetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *LLMSetupModel) renderHeader() string {
-	return lipgloss.JoinVertical(lipgloss.Left,
+	return lipgloss.JoinVertical(lipgloss.Center,
 		llmTitleStyle.Render("🤖 Setup LLM Provider"),
 		llmHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
 	)
@@ -171,13 +171,20 @@ func (m *LLMSetupModel) buildListContent() (string, int) {
 			cursorLine = lineCount
 		}
 
+		var indicator string
+		if p.id == m.cfg.LLMProvider {
+			indicator = llmSelectedIndicatorStyle.Render("●") + " "
+		} else {
+			indicator = llmUnselectedIndicatorStyle.Render("○") + " "
+		}
+
 		var row string
 		if i == m.cursor {
-			title := styles.ItemTitleSelected.Render(p.name)
+			title := indicator + styles.ItemTitleSelected.Render(p.name)
 			desc := styles.ItemDescStyle.Render(p.desc)
 			row = styles.ItemSelected.Render(title + "\n" + desc)
 		} else {
-			title := styles.ItemTitleNormal.Render(p.name)
+			title := indicator + styles.ItemTitleNormal.Render(p.name)
 			desc := styles.ItemDescStyle.Render(p.desc)
 			row = styles.ItemNormal.Render(title + "\n" + desc)
 		}
@@ -215,25 +222,28 @@ var (
 	llmTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1).
-			PaddingLeft(2)
+			MarginBottom(1)
 
 	llmHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
-			PaddingLeft(2).
 			MarginBottom(2)
 
 	llmSectionStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#A78BFA")).
 			Bold(true).
-			PaddingLeft(2).
 			MarginTop(1)
+
+	llmSelectedIndicatorStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#10B981"))
+
+	llmUnselectedIndicatorStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#6B7280"))
 )
 
 func (m *LLMSetupModel) View() tea.View {
 	header := m.renderHeader()
 	body := m.vp.View()
-	content := lipgloss.JoinVertical(lipgloss.Left, header, body)
+	content := lipgloss.JoinVertical(lipgloss.Center, header, body)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

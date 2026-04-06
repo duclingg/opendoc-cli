@@ -107,29 +107,24 @@ var (
 	docPathTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1).
-				PaddingLeft(2)
+				MarginBottom(1)
 
 	docPathBodyStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#9CA3AF")).
-				PaddingLeft(2).
 				MarginBottom(1)
 
 	docPathHintStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#6B7280")).
-				PaddingLeft(2).
 				MarginBottom(2)
 
 	docPathInputBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("#7C3AED")).
 				Padding(0, 1).
-				MarginLeft(2).
 				MarginBottom(1)
 
 	docPathStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444")).
-				PaddingLeft(2).
 				MarginTop(1)
 
 	docPathContainerStyle = lipgloss.NewStyle().
@@ -148,7 +143,7 @@ func (m *DocPathModel) View() tea.View {
 		rows = append(rows, docPathStatusStyle.Render(m.status))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	content := lipgloss.JoinVertical(lipgloss.Center, rows...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

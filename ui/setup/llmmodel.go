@@ -141,7 +141,7 @@ func (m *LLMModelModel) handleConfirm() (tea.Model, tea.Cmd) {
 }
 
 func (m *LLMModelModel) renderHeader() string {
-	return lipgloss.JoinVertical(lipgloss.Left,
+	return lipgloss.JoinVertical(lipgloss.Center,
 		llmModelTitleStyle.Render("🧠 Select Model — "+m.provider.name),
 		llmModelProviderStyle.Render(m.provider.desc),
 		llmModelHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
@@ -158,12 +158,19 @@ func (m *LLMModelModel) buildListContent() (string, int) {
 			cursorLine = lineCount
 		}
 
+		var indicator string
+		if model == m.cfg.LLMModel && m.cfg.LLMProvider == m.provider.id {
+			indicator = llmSelectedIndicatorStyle.Render("●") + " "
+		} else {
+			indicator = llmUnselectedIndicatorStyle.Render("○") + " "
+		}
+
 		var row string
 		if i == m.cursor {
-			title := styles.ItemTitleSelected.Render(model)
+			title := indicator + styles.ItemTitleSelected.Render(model)
 			row = styles.ItemSelected.Render(title)
 		} else {
-			title := styles.ItemTitleNormal.Render(model)
+			title := indicator + styles.ItemTitleNormal.Render(model)
 			row = styles.ItemNormal.Render(title)
 		}
 		rows = append(rows, row)
@@ -201,34 +208,28 @@ var (
 	llmModelTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1).
-				PaddingLeft(2)
+				MarginBottom(1)
 
 	llmModelProviderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#A78BFA")).
-				PaddingLeft(2).
 				MarginBottom(1)
 
 	llmModelHintStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#6B7280")).
-				PaddingLeft(2).
 				MarginBottom(2)
 
 	llmModelLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#E5E7EB")).
-				PaddingLeft(2).
 				MarginBottom(1)
 
 	llmModelInputBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("#7C3AED")).
 				Padding(0, 1).
-				MarginLeft(2).
 				MarginBottom(1)
 
 	llmModelStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444")).
-				PaddingLeft(2).
 				MarginTop(1)
 
 	llmModelContainerStyle = lipgloss.NewStyle().
@@ -248,7 +249,7 @@ func (m *LLMModelModel) View() tea.View {
 		if m.status != "" {
 			rows = append(rows, llmModelStatusStyle.Render(m.status))
 		}
-		content = lipgloss.JoinVertical(lipgloss.Left, rows...)
+		content = lipgloss.JoinVertical(lipgloss.Center, rows...)
 	} else {
 		header := m.renderHeader()
 		body := m.vp.View()
@@ -256,7 +257,7 @@ func (m *LLMModelModel) View() tea.View {
 		if m.status != "" {
 			parts = append(parts, llmModelStatusStyle.Render(m.status))
 		}
-		content = lipgloss.JoinVertical(lipgloss.Left, parts...)
+		content = lipgloss.JoinVertical(lipgloss.Center, parts...)
 	}
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
