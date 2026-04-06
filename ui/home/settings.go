@@ -266,7 +266,7 @@ func (m *SettingsModel) View() tea.View {
 				confirmTextStyle.Render("y  confirm  •  n / esc  cancel"),
 			),
 		)
-		v := tea.NewView(dialog)
+		v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
 		v.AltScreen = true
 		return v
 	}
@@ -279,7 +279,7 @@ func (m *SettingsModel) View() tea.View {
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
-	v := tea.NewView(content)
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
 	return v
 }

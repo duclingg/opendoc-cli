@@ -236,7 +236,7 @@ func (m *MenuModel) View() tea.View {
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
-	v := tea.NewView(content)
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
 	return v
 }

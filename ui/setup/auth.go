@@ -156,12 +156,10 @@ var (
 	authTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1).
-			PaddingLeft(2)
+			MarginBottom(1)
 
 	authHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
-			PaddingLeft(2).
 			MarginBottom(1)
 
 	codeBoxStyle = lipgloss.NewStyle().
@@ -185,16 +183,11 @@ var (
 
 	authStatusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#10B981")).
-			PaddingLeft(2).
 			MarginTop(1)
 
 	authErrorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#EF4444")).
-			PaddingLeft(2).
 			MarginTop(1)
-
-	authContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
 func (m *DeviceAuthModel) View() tea.View {
@@ -224,12 +217,9 @@ func (m *DeviceAuthModel) View() tea.View {
 		rows = append(rows, authHintStyle.Render("Press esc to cancel"))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	if off := (m.width - lipgloss.Width(content)) / 2; off > 0 {
-		content = lipgloss.NewStyle().PaddingLeft(off).Render(content)
-	}
+	content := lipgloss.JoinVertical(lipgloss.Center, rows...)
 
-	v := tea.NewView(content)
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
 	return v
 }
