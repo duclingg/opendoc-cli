@@ -12,15 +12,19 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// confirmState tracks whether a destructive-action dialog is active.
 type confirmState int
 
 const (
-	confirmNone confirmState = iota
-	confirmReset
+	confirmNone  confirmState = iota
+	confirmReset              // user has selected "Reset All Settings"
 )
 
+// resetDoneMsg carries the result of the async config reset.
 type resetDoneMsg struct{ err error }
 
+// SettingsModel lists individual setup steps the user can re-run, plus a
+// "Reset All" option and a back link to the main menu.
 type SettingsModel struct {
 	cfg          *config.Config
 	cursor       int
@@ -31,6 +35,7 @@ type SettingsModel struct {
 	scrollOffset int
 }
 
+// settingsItems is the ordered list of actions available in settings.
 var settingsItems = []listutil.Item{
 	{Title: "Re-connect GitHub", Desc: "Re-authorize with your GitHub account or organization"},
 	{Title: "Change LLM Provider", Desc: "Update your AI provider configuration"},
@@ -40,14 +45,18 @@ var settingsItems = []listutil.Item{
 	{Title: "← Back", Desc: "Return to the main menu"},
 }
 
+// NewSettingsModel constructs the settings screen.
 func NewSettingsModel(cfg *config.Config, w, h int) *SettingsModel {
 	m := &SettingsModel{cfg: cfg, width: w, height: h}
 	m.updateScroll()
 	return m
 }
 
+// Init satisfies tea.Model; no initial commands are needed.
 func (m *SettingsModel) Init() tea.Cmd { return nil }
 
+// Update handles window resizing, the async reset result, confirm-dialog
+// responses, and keyboard navigation.
 func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -109,10 +118,14 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// settingsReturnTo returns a returnTo callback that recreates this
+// SettingsModel so sub-screens can navigate back after completing a change.
 func (m *SettingsModel) settingsReturnTo() func(*config.Config, int, int) tea.Model {
 	return func(c *config.Config, w, h int) tea.Model { return NewSettingsModel(c, w, h) }
 }
 
+// handleSelect launches the appropriate sub-screen or action for the focused
+// settings item.
 func (m *SettingsModel) handleSelect() (tea.Model, tea.Cmd) {
 	switch m.cursor {
 	case 0: // re-connect GitHub
@@ -147,6 +160,7 @@ func (m *SettingsModel) handleSelect() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// doReset returns a command that clears all config fields and saves to disk.
 func (m *SettingsModel) doReset() tea.Cmd {
 	return func() tea.Msg {
 		err := m.cfg.Reset()
@@ -154,10 +168,12 @@ func (m *SettingsModel) doReset() tea.Cmd {
 	}
 }
 
+// renderHeader builds the title, keyboard-hint, and optional GitHub-login line
+// shown above the settings list.
 func (m *SettingsModel) renderHeader() string {
 	var rows []string
-	rows = append(rows, settingsTitleStyle.Render("⚙️  Settings"))
-	rows = append(rows, settingsHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"))
+	rows = append(rows, styles.TitleStyle.Render("⚙️  Settings"))
+	rows = append(rows, styles.HintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"))
 	if m.cfg.IsRegistered() {
 		info := styles.ItemDescStyle.Render(fmt.Sprintf("GitHub: %s", m.cfg.GitHubLogin))
 		rows = append(rows, lipgloss.NewStyle().MarginBottom(1).Render(info))
@@ -165,11 +181,11 @@ func (m *SettingsModel) renderHeader() string {
 	return lipgloss.JoinVertical(lipgloss.Center, rows...)
 }
 
+// updateScroll adjusts scrollOffset so the focused row stays visible.
 func (m *SettingsModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	const footerH = 2
 	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
 	_, cursorLine, cursorItemH := listutil.RenderItems(settingsItems, m.cursor)
 	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
@@ -178,15 +194,6 @@ func (m *SettingsModel) updateScroll() {
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	settingsTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1)
-
-	settingsHintStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")).
-				MarginBottom(2)
-
 	confirmBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#F59E0B")).
@@ -206,6 +213,8 @@ var (
 				MarginTop(1)
 )
 
+// View renders either the destructive-reset confirmation dialog or the normal
+// settings list with an optional status message.
 func (m *SettingsModel) View() tea.View {
 	if m.confirm == confirmReset {
 		dialog := confirmBoxStyle.Render(
@@ -223,7 +232,6 @@ func (m *SettingsModel) View() tea.View {
 	}
 
 	header := m.renderHeader()
-	const footerH = 2
 	availH := m.height - lipgloss.Height(header) - footerH
 	list, _, _ := listutil.RenderItems(settingsItems, m.cursor)
 	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)

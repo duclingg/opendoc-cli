@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// llmProvider describes an AI backend the user can configure.
 type llmProvider struct {
 	id         string
 	name       string
@@ -18,6 +19,8 @@ type llmProvider struct {
 	models     []string // empty means free-text input (local providers)
 }
 
+// llmProviders is the ordered list of supported AI providers shown in the
+// picker. Hosted providers come first, followed by local ones.
 var llmProviders = []llmProvider{
 	{
 		id: "openai", name: "OpenAI", desc: "GPT-4o, GPT-4 Turbo, and more",
@@ -77,6 +80,8 @@ var llmProviders = []llmProvider{
 	{id: "lmstudio", name: "LM Studio", desc: "Run models locally via LM Studio", local: true, defaultURL: "http://localhost:1234"},
 }
 
+// LLMSetupModel is the provider-picker screen. It groups providers under
+// "Hosted" and "Local" section headers and uses a scroll-aware viewport.
 type LLMSetupModel struct {
 	cfg          *config.Config
 	cursor       int
@@ -86,6 +91,8 @@ type LLMSetupModel struct {
 	returnTo     func(*config.Config, int, int) tea.Model
 }
 
+// NewLLMSetupModel creates an LLMSetupModel with the cursor pre-positioned on
+// the currently configured provider (or the first entry if none is set).
 func NewLLMSetupModel(cfg *config.Config, w, h int, returnTo func(*config.Config, int, int) tea.Model) *LLMSetupModel {
 	cursor := 0
 	for i, p := range llmProviders {
@@ -94,14 +101,15 @@ func NewLLMSetupModel(cfg *config.Config, w, h int, returnTo func(*config.Config
 			break
 		}
 	}
-
 	m := &LLMSetupModel{cfg: cfg, cursor: cursor, width: w, height: h, returnTo: returnTo}
 	m.updateScroll()
 	return m
 }
 
+// Init satisfies tea.Model; no initial commands are needed.
 func (m *LLMSetupModel) Init() tea.Cmd { return nil }
 
+// Update handles window resizing, keyboard navigation, and provider selection.
 func (m *LLMSetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -140,26 +148,28 @@ func (m *LLMSetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// renderHeader builds the title and keyboard-hint block shown above the list.
 func (m *LLMSetupModel) renderHeader() string {
 	return lipgloss.JoinVertical(lipgloss.Center,
-		llmTitleStyle.Render("🤖 Setup LLM Provider"),
-		llmHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
+		styles.TitleStyle.Render("🤖 Setup LLM Provider"),
+		styles.HintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
 	)
 }
 
-// buildListContent returns (list, scrollTop, cursorLine, cursorItemH).
-// scrollTop is the first line of the section header above the cursor item so
-// that scrolling up always reveals the section label, not just the item itself.
-func (m *LLMSetupModel) buildListContent() (string, int, int, int) {
+// buildListContent renders every provider row plus section headers and returns
+// the joined list string together with three scroll metrics:
+//   - scrollTop: first line of the section header above the cursor item, so
+//     scrolling up always reveals the section label.
+//   - cursorLine: first line of the cursor item itself.
+//   - cursorItemH: height of the cursor item in terminal lines.
+func (m *LLMSetupModel) buildListContent() (list string, scrollTop int, cursorLine int, cursorItemH int) {
 	var rows []string
 	lineCount := 0
-	cursorLine := 0
-	cursorItemH := 0
-	scrollTop := 0     // top of the section group containing the cursor
 	sectionStart := 0 // first line of the current section header
 	prevLocal := false
 
 	for i, p := range llmProviders {
+		// Insert a section header when transitioning between hosted and local.
 		var sectionRow string
 		if p.local && !prevLocal {
 			sectionRow = llmSectionStyle.Render("Local")
@@ -203,20 +213,24 @@ func (m *LLMSetupModel) buildListContent() (string, int, int, int) {
 		lineCount += h
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), scrollTop, cursorLine, cursorItemH
+	list = lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return list, scrollTop, cursorLine, cursorItemH
 }
 
+// updateScroll adjusts scrollOffset so that:
+//  1. The section header above the cursor item is always revealed when
+//     scrolling up (scrollTop constraint).
+//  2. The bottom of the cursor item is visible when scrolling down.
 func (m *LLMSetupModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	availH := m.height - lipgloss.Height(m.renderHeader())
+	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
 	_, scrollTop, cursorLine, cursorItemH := m.buildListContent()
-	// Scroll up: reveal the section header above the cursor item.
+
 	if scrollTop < m.scrollOffset {
 		m.scrollOffset = scrollTop
 	}
-	// Scroll down: ensure the bottom of the cursor item is visible.
 	if cursorLine+cursorItemH > m.scrollOffset+availH {
 		m.scrollOffset = cursorLine + cursorItemH - availH
 	}
@@ -228,15 +242,6 @@ func (m *LLMSetupModel) updateScroll() {
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	llmTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1)
-
-	llmHintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6B7280")).
-			MarginBottom(2)
-
 	llmSectionStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#A78BFA")).
 			Bold(true).
@@ -249,9 +254,10 @@ var (
 					Foreground(lipgloss.Color("#6B7280"))
 )
 
+// View renders the LLM provider picker: header then the scrollable list.
 func (m *LLMSetupModel) View() tea.View {
 	header := m.renderHeader()
-	availH := m.height - lipgloss.Height(header)
+	availH := m.height - lipgloss.Height(header) - footerH
 	list, _, _, _ := m.buildListContent()
 	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 	content := lipgloss.JoinVertical(lipgloss.Center, header, centeredList)

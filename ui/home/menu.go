@@ -5,25 +5,36 @@ import (
 
 	"opendoc/config"
 	"opendoc/ui/listutil"
+	"opendoc/ui/styles"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
+// footerH is the number of terminal lines reserved at the bottom of every
+// home screen for breathing room.
+const footerH = 2
+
+// menuItems is the fixed list of main-menu actions.
+var menuItems = []listutil.Item{
+	{Title: "Settings", Desc: "Manage app configuration and re-setup options"},
+	{Title: "Quit", Desc: "Exit the application"},
+}
+
+// MenuModel is the main menu shown after setup completes. It presents a status
+// bar with the current GitHub and LLM configuration plus a short action list.
 type MenuModel struct {
 	cfg          *config.Config
-	items        []listutil.Item
 	cursor       int
 	width        int
 	height       int
-	status       string
 	scrollOffset int
 }
 
+// NewMenuModel constructs the main menu.
 func NewMenuModel(cfg *config.Config, w, h int) *MenuModel {
 	m := &MenuModel{
 		cfg:    cfg,
-		items:  buildMenuItems(cfg),
 		width:  w,
 		height: h,
 	}
@@ -31,17 +42,12 @@ func NewMenuModel(cfg *config.Config, w, h int) *MenuModel {
 	return m
 }
 
-func buildMenuItems(_ *config.Config) []listutil.Item {
-	return []listutil.Item{
-		{Title: "Settings", Desc: "Manage app configuration and re-setup options"},
-		{Title: "Quit", Desc: "Exit the application"},
-	}
-}
-
+// Init satisfies tea.Model; no initial commands are needed.
 func (m *MenuModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles window resizing and keyboard navigation.
 func (m *MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -61,7 +67,7 @@ func (m *MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.cursor < len(m.items)-1 {
+			if m.cursor < len(menuItems)-1 {
 				m.cursor++
 				m.updateScroll()
 			}
@@ -74,6 +80,7 @@ func (m *MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleSelect executes the action for the currently focused menu item.
 func (m *MenuModel) handleSelect() (tea.Model, tea.Cmd) {
 	switch m.cursor {
 	case 0: // Settings
@@ -86,6 +93,8 @@ func (m *MenuModel) handleSelect() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// renderStatusBar builds the compact status pill showing the GitHub login and
+// active LLM model. Missing values are highlighted in amber.
 func (m *MenuModel) renderStatusBar() string {
 	dot := func(ok bool) string {
 		if ok {
@@ -118,32 +127,31 @@ func (m *MenuModel) renderStatusBar() string {
 	)
 }
 
+// renderHeader builds the title, keyboard-hint, and status-bar block shown
+// above the menu list.
 func (m *MenuModel) renderHeader() string {
 	return lipgloss.JoinVertical(lipgloss.Center,
-		menuTitleStyle.Render("📄 opendoc cli"),
+		styles.TitleStyle.Render("📄 opendoc cli"),
 		menuHintStyle.Render("↑/↓ navigate  •  enter select  •  q quit"),
 		m.renderStatusBar(),
 	)
 }
 
+// updateScroll adjusts scrollOffset so the focused row stays visible.
 func (m *MenuModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	const footerH = 2
 	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
-	_, cursorLine, cursorItemH := listutil.RenderItems(m.items, m.cursor)
+	_, cursorLine, cursorItemH := listutil.RenderItems(menuItems, m.cursor)
 	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	menuTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7C3AED")).
-			MarginBottom(1)
-
+	// menuHintStyle uses zero bottom margin so the status bar sits immediately
+	// below the hint without extra spacing.
 	menuHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
 			MarginBottom(0)
@@ -172,24 +180,17 @@ var (
 
 	statusWarnStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F59E0B"))
-
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#10B981")).
-			MarginTop(1)
 )
 
+// View renders the main menu: header with status bar then the scrollable
+// action list.
 func (m *MenuModel) View() tea.View {
 	header := m.renderHeader()
-	const footerH = 2
 	availH := m.height - lipgloss.Height(header) - footerH
-	list, _, _ := listutil.RenderItems(m.items, m.cursor)
+	list, _, _ := listutil.RenderItems(menuItems, m.cursor)
 	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 
-	parts := []string{header, centeredList}
-	if m.status != "" {
-		parts = append(parts, statusStyle.Render(m.status))
-	}
-	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
+	content := lipgloss.JoinVertical(lipgloss.Center, header, centeredList)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true

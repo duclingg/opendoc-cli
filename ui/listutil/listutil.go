@@ -1,3 +1,6 @@
+// Package listutil provides shared helpers for rendering scrollable item lists
+// in the Bubble Tea TUI screens. All list-based screens use these functions so
+// that scroll behaviour, item styling, and viewport clipping stay consistent.
 package listutil
 
 import (
@@ -13,9 +16,10 @@ type Item struct {
 	Desc  string
 }
 
-// RenderItems renders a slice of Items using the standard selected/normal styles.
-// It returns the full joined list string, the first line of the cursor item, and
-// the cursor item's height — all computed in a single pass with no double-render.
+// RenderItems renders a slice of Items using the standard selected/normal
+// styles. It returns the full joined list string, the first terminal line of
+// the focused item, and the focused item's height — all in a single pass so
+// the list is never rendered twice.
 func RenderItems(items []Item, cursor int) (list string, cursorLine int, cursorItemH int) {
 	rows := make([]string, 0, len(items))
 	lineCount := 0
@@ -47,7 +51,7 @@ func RenderItems(items []Item, cursor int) (list string, cursorLine int, cursorI
 	return list, cursorLine, cursorItemH
 }
 
-// UpdateScroll adjusts *scrollOffset so that the cursor item
+// UpdateScroll adjusts *scrollOffset so that the focused item occupying
 // [cursorLine, cursorLine+cursorItemH) stays within the visible window
 // [scrollOffset, scrollOffset+availH).
 func UpdateScroll(scrollOffset *int, availH, cursorLine, cursorItemH int) {
@@ -62,14 +66,16 @@ func UpdateScroll(scrollOffset *int, availH, cursorLine, cursorItemH int) {
 	}
 }
 
-// RenderList clips the list to the visible window then horizontally centers it
-// within totalWidth. This is the standard pattern used in every list View().
+// RenderList clips the rendered list string to the visible viewport window
+// then horizontally centers it within totalWidth. This is the standard pattern
+// used in every list-based View().
 func RenderList(list string, scrollOffset, availH, totalWidth int) string {
 	clipped := lineutil.ClipLines(list, scrollOffset, availH)
 	return lipgloss.NewStyle().Width(totalWidth).Align(lipgloss.Center).Render(clipped)
 }
 
-// ContentWidth caps the usable content width at 80 columns.
+// ContentWidth caps the usable content width at 80 columns so that wide
+// terminals don't stretch list items uncomfortably.
 func ContentWidth(screenWidth int) int {
 	const maxWidth = 80
 	if screenWidth < maxWidth {

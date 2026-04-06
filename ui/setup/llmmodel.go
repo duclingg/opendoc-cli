@@ -12,17 +12,17 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// llmModelSaveMsg carries the result of persisting the chosen model.
 type llmModelSaveMsg struct{ err error }
 
-// ─── LLMModelModel ───────────────────────────────────────────────────────────
-// Shows a list of preset models for cloud providers, or a text-input for local
-// providers (Ollama, LM Studio) where the installed model name is unknown.
-
+// LLMModelModel shows a list of preset models for cloud providers, or a
+// free-text input for local providers (Ollama, LM Studio) where the installed
+// model name is not known in advance.
 type LLMModelModel struct {
 	cfg          *config.Config
 	provider     llmProvider
 	cursor       int
-	input        textinput.Model // used only for local providers
+	input        textinput.Model // used only when provider.local is true
 	scrollOffset int
 	width        int
 	height       int
@@ -30,6 +30,9 @@ type LLMModelModel struct {
 	returnTo     func(*config.Config, int, int) tea.Model
 }
 
+// NewLLMModelModel constructs the model-picker for the given provider.
+// For cloud providers the cursor is pre-positioned on the currently saved
+// model. For local providers a text input is focused instead.
 func NewLLMModelModel(cfg *config.Config, provider llmProvider, w, h int, returnTo func(*config.Config, int, int) tea.Model) *LLMModelModel {
 	m := &LLMModelModel{
 		cfg:      cfg,
@@ -61,6 +64,8 @@ func NewLLMModelModel(cfg *config.Config, provider llmProvider, w, h int, return
 	return m
 }
 
+// Init starts the text-input blink cursor for local providers; cloud providers
+// need no initial command.
 func (m *LLMModelModel) Init() tea.Cmd {
 	if m.provider.local {
 		return textinput.Blink
@@ -68,6 +73,8 @@ func (m *LLMModelModel) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles window resizing, save results, and keyboard input. For local
+// providers the text input also receives every unhandled message.
 func (m *LLMModelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -120,6 +127,7 @@ func (m *LLMModelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleConfirm validates the selection and dispatches an async save command.
 func (m *LLMModelModel) handleConfirm() (tea.Model, tea.Cmd) {
 	var chosen string
 	if m.provider.local {
@@ -139,19 +147,29 @@ func (m *LLMModelModel) handleConfirm() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m *LLMModelModel) renderHeader() string {
+// renderTitleBlock returns the title and provider description lines that are
+// shared between the list and local-provider views.
+func (m *LLMModelModel) renderTitleBlock() string {
 	return lipgloss.JoinVertical(lipgloss.Center,
-		llmModelTitleStyle.Render("🧠 Select Model — "+m.provider.name),
+		styles.TitleStyle.Render("🧠 Select Model — "+m.provider.name),
 		llmModelProviderStyle.Render(m.provider.desc),
-		llmModelHintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
 	)
 }
 
-func (m *LLMModelModel) buildListContent() (string, int, int) {
+// renderHeader builds the full header for the list (cloud provider) view:
+// title block plus the navigation hint.
+func (m *LLMModelModel) renderHeader() string {
+	return lipgloss.JoinVertical(lipgloss.Center,
+		m.renderTitleBlock(),
+		styles.HintStyle.Render("↑/↓ navigate  •  enter select  •  esc back"),
+	)
+}
+
+// buildListContent renders each model row and returns the joined list string
+// together with the cursor item's top line and height for scroll tracking.
+func (m *LLMModelModel) buildListContent() (list string, cursorLine int, cursorItemH int) {
 	var rows []string
 	lineCount := 0
-	cursorLine := 0
-	cursorItemH := 0
 
 	for i, model := range m.provider.models {
 		if i == m.cursor {
@@ -181,14 +199,16 @@ func (m *LLMModelModel) buildListContent() (string, int, int) {
 		lineCount += h
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine, cursorItemH
+	list = lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return list, cursorLine, cursorItemH
 }
 
+// updateScroll adjusts scrollOffset so the focused model row stays visible.
+// Only called for cloud (list) providers; local providers use a text input.
 func (m *LLMModelModel) updateScroll() {
 	if m.width == 0 || m.height == 0 || m.provider.local {
 		return
 	}
-	const footerH = 2
 	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
 	_, cursorLine, cursorItemH := m.buildListContent()
 	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
@@ -197,18 +217,9 @@ func (m *LLMModelModel) updateScroll() {
 // ─── styles ──────────────────────────────────────────────────────────────────
 
 var (
-	llmModelTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#7C3AED")).
-				MarginBottom(1)
-
 	llmModelProviderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#A78BFA")).
 				MarginBottom(1)
-
-	llmModelHintStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")).
-				MarginBottom(2)
 
 	llmModelLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#E5E7EB")).
@@ -223,28 +234,26 @@ var (
 	llmModelStatusStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444")).
 				MarginTop(1)
-
-	llmModelContainerStyle = lipgloss.NewStyle().
-				Align(lipgloss.Center, lipgloss.Center)
 )
 
+// View renders either a free-text input (local providers) or a scrollable
+// model list (cloud providers).
 func (m *LLMModelModel) View() tea.View {
 	var content string
 
 	if m.provider.local {
-		var rows []string
-		rows = append(rows, llmModelTitleStyle.Render("🧠 Select Model — "+m.provider.name))
-		rows = append(rows, llmModelProviderStyle.Render(m.provider.desc))
-		rows = append(rows, llmModelLabelStyle.Render("Model name"))
-		rows = append(rows, llmModelHintStyle.Render("enter confirm  •  esc back"))
-		rows = append(rows, llmModelInputBoxStyle.Render(m.input.View()))
+		rows := []string{
+			m.renderTitleBlock(),
+			llmModelLabelStyle.Render("Model name"),
+			styles.HintStyle.Render("enter confirm  •  esc back"),
+			llmModelInputBoxStyle.Render(m.input.View()),
+		}
 		if m.status != "" {
 			rows = append(rows, llmModelStatusStyle.Render(m.status))
 		}
 		content = lipgloss.JoinVertical(lipgloss.Center, rows...)
 	} else {
 		header := m.renderHeader()
-		const footerH = 2
 		availH := m.height - lipgloss.Height(header) - footerH
 		list, _, _ := m.buildListContent()
 		centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
