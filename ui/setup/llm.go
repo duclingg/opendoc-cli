@@ -147,10 +147,16 @@ func (m *LLMSetupModel) renderHeader() string {
 	)
 }
 
-func (m *LLMSetupModel) buildListContent() (string, int) {
+// buildListContent returns (list, scrollTop, cursorLine, cursorItemH).
+// scrollTop is the first line of the section header above the cursor item so
+// that scrolling up always reveals the section label, not just the item itself.
+func (m *LLMSetupModel) buildListContent() (string, int, int, int) {
 	var rows []string
 	lineCount := 0
 	cursorLine := 0
+	cursorItemH := 0
+	scrollTop := 0     // top of the section group containing the cursor
+	sectionStart := 0 // first line of the current section header
 	prevLocal := false
 
 	for i, p := range llmProviders {
@@ -162,12 +168,14 @@ func (m *LLMSetupModel) buildListContent() (string, int) {
 		}
 		if sectionRow != "" {
 			rows = append(rows, sectionRow)
+			sectionStart = lineCount
 			lineCount += lipgloss.Height(sectionRow)
 		}
 		prevLocal = p.local
 
 		if i == m.cursor {
 			cursorLine = lineCount
+			scrollTop = sectionStart
 		}
 
 		var indicator string
@@ -188,23 +196,14 @@ func (m *LLMSetupModel) buildListContent() (string, int) {
 			row = styles.ItemNormal.Render(title + "\n" + desc)
 		}
 		rows = append(rows, row)
-		lineCount += lipgloss.Height(row)
+		h := lipgloss.Height(row)
+		if i == m.cursor {
+			cursorItemH = h
+		}
+		lineCount += h
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
-}
-
-func (m *LLMSetupModel) cursorItemHeight() int {
-	p := llmProviders[m.cursor]
-	var indicator string
-	if p.id == m.cfg.LLMProvider {
-		indicator = llmSelectedIndicatorStyle.Render("●") + " "
-	} else {
-		indicator = llmUnselectedIndicatorStyle.Render("○") + " "
-	}
-	title := indicator + styles.ItemTitleSelected.Render(p.name)
-	desc := styles.ItemDescStyle.Render(p.desc)
-	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
+	return lipgloss.JoinVertical(lipgloss.Left, rows...), scrollTop, cursorLine, cursorItemH
 }
 
 func (m *LLMSetupModel) updateScroll() {
@@ -212,8 +211,18 @@ func (m *LLMSetupModel) updateScroll() {
 		return
 	}
 	availH := m.height - lipgloss.Height(m.renderHeader())
-	_, cursorLine := m.buildListContent()
-	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, m.cursorItemHeight())
+	_, scrollTop, cursorLine, cursorItemH := m.buildListContent()
+	// Scroll up: reveal the section header above the cursor item.
+	if scrollTop < m.scrollOffset {
+		m.scrollOffset = scrollTop
+	}
+	// Scroll down: ensure the bottom of the cursor item is visible.
+	if cursorLine+cursorItemH > m.scrollOffset+availH {
+		m.scrollOffset = cursorLine + cursorItemH - availH
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -243,7 +252,7 @@ var (
 func (m *LLMSetupModel) View() tea.View {
 	header := m.renderHeader()
 	availH := m.height - lipgloss.Height(header)
-	list, _ := m.buildListContent()
+	list, _, _, _ := m.buildListContent()
 	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 	content := lipgloss.JoinVertical(lipgloss.Center, header, centeredList)
 

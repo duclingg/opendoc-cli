@@ -147,10 +147,11 @@ func (m *LLMModelModel) renderHeader() string {
 	)
 }
 
-func (m *LLMModelModel) buildListContent() (string, int) {
+func (m *LLMModelModel) buildListContent() (string, int, int) {
 	var rows []string
 	lineCount := 0
 	cursorLine := 0
+	cursorItemH := 0
 
 	for i, model := range m.provider.models {
 		if i == m.cursor {
@@ -173,25 +174,14 @@ func (m *LLMModelModel) buildListContent() (string, int) {
 			row = styles.ItemNormal.Render(title)
 		}
 		rows = append(rows, row)
-		lineCount += lipgloss.Height(row)
+		h := lipgloss.Height(row)
+		if i == m.cursor {
+			cursorItemH = h
+		}
+		lineCount += h
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
-}
-
-func (m *LLMModelModel) cursorItemHeight() int {
-	if m.provider.local || m.cursor >= len(m.provider.models) {
-		return 1
-	}
-	model := m.provider.models[m.cursor]
-	var indicator string
-	if model == m.cfg.LLMModel && m.cfg.LLMProvider == m.provider.id {
-		indicator = llmSelectedIndicatorStyle.Render("●") + " "
-	} else {
-		indicator = llmUnselectedIndicatorStyle.Render("○") + " "
-	}
-	title := indicator + styles.ItemTitleSelected.Render(model)
-	return lipgloss.Height(styles.ItemSelected.Render(title))
+	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine, cursorItemH
 }
 
 func (m *LLMModelModel) updateScroll() {
@@ -200,8 +190,8 @@ func (m *LLMModelModel) updateScroll() {
 	}
 	const footerH = 2
 	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
-	_, cursorLine := m.buildListContent()
-	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, m.cursorItemHeight())
+	_, cursorLine, cursorItemH := m.buildListContent()
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -256,7 +246,7 @@ func (m *LLMModelModel) View() tea.View {
 		header := m.renderHeader()
 		const footerH = 2
 		availH := m.height - lipgloss.Height(header) - footerH
-		list, _ := m.buildListContent()
+		list, _, _ := m.buildListContent()
 		centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 		parts := []string{header, centeredList}
 		if m.status != "" {

@@ -157,10 +157,11 @@ func (m *SetupModel) renderHeader() string {
 	)
 }
 
-func (m *SetupModel) buildListContent() (string, int) {
+func (m *SetupModel) buildListContent() (string, int, int) {
 	var rows []string
 	lineCount := 0
 	cursorLine := 0
+	cursorItemH := 0
 
 	for i, step := range setupSteps {
 		if i == m.cursor {
@@ -185,19 +186,25 @@ func (m *SetupModel) buildListContent() (string, int) {
 			row = styles.ItemNormal.Render(label)
 		}
 		rows = append(rows, row)
-		lineCount += lipgloss.Height(row)
+		h := lipgloss.Height(row)
+		if i == m.cursor {
+			cursorItemH = h
+		}
+		lineCount += h
 	}
 
 	startTitle := startEnabledTitleStyle.Render("▶  Start")
 	if m.cursor == len(setupSteps) {
 		cursorLine = lineCount
-		rows = append(rows, styles.ItemSelected.Render(startTitle))
+		row := styles.ItemSelected.Render(startTitle)
+		cursorItemH = lipgloss.Height(row)
+		rows = append(rows, row)
 	} else {
 		rows = append(rows, styles.ItemNormal.Render(startTitle))
 	}
 
 	list := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	return list, cursorLine
+	return list, cursorLine, cursorItemH
 }
 
 func (m *SetupModel) updateScroll() {
@@ -206,27 +213,8 @@ func (m *SetupModel) updateScroll() {
 	}
 	const footerH = 2
 	availH := m.height - lipgloss.Height(m.renderHeader()) - footerH
-	_, cursorLine := m.buildListContent()
-	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, m.cursorItemHeight())
-}
-
-func (m *SetupModel) cursorItemHeight() int {
-	if m.isStartIdx(m.cursor) {
-		startTitle := startEnabledTitleStyle.Render("▶  Start")
-		return lipgloss.Height(styles.ItemSelected.Render(startTitle))
-	}
-	step := setupSteps[m.cursor]
-	done := step.done(m.cfg)
-	var checkmark, titleStr string
-	if done {
-		checkmark = stepDoneStyle.Render("[✓]")
-		titleStr = stepDoneStyle.Render(step.label)
-	} else {
-		checkmark = stepPendingStyle.Render("[ ]")
-		titleStr = styles.ItemTitleNormal.Render(step.label)
-	}
-	label := checkmark + " " + titleStr + "\n    " + styles.ItemDescStyle.Render(step.desc)
-	return lipgloss.Height(styles.ItemSelected.Render(label))
+	_, cursorLine, cursorItemH := m.buildListContent()
+	listutil.UpdateScroll(&m.scrollOffset, availH, cursorLine, cursorItemH)
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -268,7 +256,7 @@ func (m *SetupModel) View() tea.View {
 	header := m.renderHeader()
 	const footerH = 2
 	availH := m.height - lipgloss.Height(header) - footerH
-	list, _ := m.buildListContent()
+	list, _, _ := m.buildListContent()
 	centeredList := listutil.RenderList(list, m.scrollOffset, availH, m.width)
 
 	parts := []string{header, centeredList}
