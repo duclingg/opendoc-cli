@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"opendoc/config"
+	"opendoc/ui/lineutil"
 	"opendoc/ui/styles"
 
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -41,13 +41,13 @@ var setupSteps = []setupStep{
 }
 
 type SetupModel struct {
-	cfg        *config.Config
-	cursor     int
-	width      int
-	height     int
-	status     string
-	vp         viewport.Model
-	onComplete func(*config.Config, int, int) tea.Model
+	cfg          *config.Config
+	cursor       int
+	width        int
+	height       int
+	status       string
+	scrollOffset int
+	onComplete   func(*config.Config, int, int) tea.Model
 }
 
 func NewSetupModel(cfg *config.Config, w, h int, onComplete func(*config.Config, int, int) tea.Model) *SetupModel {
@@ -63,8 +63,7 @@ func NewSetupModel(cfg *config.Config, w, h int, onComplete func(*config.Config,
 		onComplete = func(_ *config.Config, _, _ int) tea.Model { return nil }
 	}
 	m := &SetupModel{cfg: cfg, width: w, height: h, cursor: cursor, onComplete: onComplete}
-	m.vp = viewport.New()
-	m.syncViewport()
+	m.updateScroll()
 	return m
 }
 
@@ -79,7 +78,7 @@ func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.syncViewport()
+		m.updateScroll()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -90,14 +89,14 @@ func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 				m.status = ""
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "down", "j":
 			if m.cursor < m.totalItems()-1 {
 				m.cursor++
 				m.status = ""
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "enter", " ":
@@ -168,8 +167,13 @@ func (m *SetupModel) renderHeader() string {
 
 func (m *SetupModel) buildListContent() (string, int) {
 	var rows []string
+	lineCount := 0
+	cursorLine := 0
 
 	for i, step := range setupSteps {
+		if i == m.cursor {
+			cursorLine = lineCount
+		}
 		done := step.done(m.cfg)
 		var checkmark, titleStr string
 		if done {
@@ -182,36 +186,70 @@ func (m *SetupModel) buildListContent() (string, int) {
 		descStr := styles.ItemDescStyle.Render(step.desc)
 		label := checkmark + " " + titleStr + "\n    " + descStr
 
+		var row string
 		if i == m.cursor {
-			rows = append(rows, styles.ItemSelected.Render(label))
+			row = styles.ItemSelected.Render(label)
 		} else {
-			rows = append(rows, styles.ItemNormal.Render(label))
+			row = styles.ItemNormal.Render(label)
 		}
+		rows = append(rows, row)
+		lineCount += lipgloss.Height(row)
 	}
 
 	startTitle := startEnabledTitleStyle.Render("▶  Start")
 	if m.cursor == len(setupSteps) {
+		cursorLine = lineCount
 		rows = append(rows, styles.ItemSelected.Render(startTitle))
 	} else {
 		rows = append(rows, styles.ItemNormal.Render(startTitle))
 	}
 
 	list := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	return list, 0
+	return list, cursorLine
 }
 
-func (m *SetupModel) syncViewport() {
+func (m *SetupModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 	header := m.renderHeader()
-	headerH := lipgloss.Height(header)
-	const footerH = 2 // reserve space for status line
-	m.vp.SetWidth(m.contentWidth())
-	m.vp.SetHeight(m.height - headerH - footerH)
-	content, cursorLine := m.buildListContent()
-	m.vp.SetContent(content)
-	m.vp.EnsureVisible(cursorLine, 0, 0)
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
+
+	_, cursorLine := m.buildListContent()
+
+	// figure out the height of the cursor item so we scroll enough
+	// to show the whole item, not just its first line
+	cursorItemH := m.cursorItemHeight()
+
+	if cursorLine < m.scrollOffset {
+		m.scrollOffset = cursorLine
+	}
+	if cursorLine+cursorItemH > m.scrollOffset+availH {
+		m.scrollOffset = cursorLine + cursorItemH - availH
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
+func (m *SetupModel) cursorItemHeight() int {
+	if m.isStartIdx(m.cursor) {
+		startTitle := startEnabledTitleStyle.Render("▶  Start")
+		return lipgloss.Height(styles.ItemSelected.Render(startTitle))
+	}
+	step := setupSteps[m.cursor]
+	done := step.done(m.cfg)
+	var checkmark, titleStr string
+	if done {
+		checkmark = stepDoneStyle.Render("[✓]")
+		titleStr = stepDoneStyle.Render(step.label)
+	} else {
+		checkmark = stepPendingStyle.Render("[ ]")
+		titleStr = styles.ItemTitleNormal.Render(step.label)
+	}
+	label := checkmark + " " + titleStr + "\n    " + styles.ItemDescStyle.Render(step.desc)
+	return lipgloss.Height(styles.ItemSelected.Render(label))
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -251,13 +289,15 @@ var (
 
 func (m *SetupModel) View() tea.View {
 	header := m.renderHeader()
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
 	list, _ := m.buildListContent()
+	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
 
-	// measure the natural width of the list block and center it as a unit
 	centeredList := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
-		Render(list)
+		Render(clipped)
 
 	parts := []string{header, centeredList}
 	if m.status != "" {

@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"opendoc/config"
+	"opendoc/ui/lineutil"
 	"opendoc/ui/styles"
 
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -17,13 +17,13 @@ type menuItem struct {
 }
 
 type MenuModel struct {
-	cfg    *config.Config
-	items  []menuItem
-	cursor int
-	width  int
-	height int
-	status string
-	vp     viewport.Model
+	cfg          *config.Config
+	items        []menuItem
+	cursor       int
+	width        int
+	height       int
+	status       string
+	scrollOffset int
 }
 
 func NewMenuModel(cfg *config.Config, w, h int) *MenuModel {
@@ -33,8 +33,7 @@ func NewMenuModel(cfg *config.Config, w, h int) *MenuModel {
 		width:  w,
 		height: h,
 	}
-	m.vp = viewport.New()
-	m.syncViewport()
+	m.updateScroll()
 	return m
 }
 
@@ -54,7 +53,7 @@ func (m *MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.syncViewport()
+		m.updateScroll()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -64,13 +63,13 @@ func (m *MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "down", "j":
 			if m.cursor < len(m.items)-1 {
 				m.cursor++
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "enter", " ":
@@ -168,18 +167,31 @@ func (m *MenuModel) buildListContent() (string, int) {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
 }
 
-func (m *MenuModel) syncViewport() {
+func (m *MenuModel) cursorItemHeight() int {
+	item := m.items[m.cursor]
+	title := styles.ItemTitleSelected.Render(item.title)
+	desc := styles.ItemDescStyle.Render(item.desc)
+	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
+}
+
+func (m *MenuModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 	header := m.renderHeader()
-	headerH := lipgloss.Height(header)
-	const footerH = 2 // reserve space for status line
-	m.vp.SetWidth(m.contentWidth())
-	m.vp.SetHeight(m.height - headerH - footerH)
-	content, cursorLine := m.buildListContent()
-	m.vp.SetContent(content)
-	m.vp.EnsureVisible(cursorLine, 0, 0)
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
+	_, cursorLine := m.buildListContent()
+	cursorItemH := m.cursorItemHeight()
+	if cursorLine < m.scrollOffset {
+		m.scrollOffset = cursorLine
+	}
+	if cursorLine+cursorItemH > m.scrollOffset+availH {
+		m.scrollOffset = cursorLine + cursorItemH - availH
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -226,13 +238,15 @@ var (
 
 func (m *MenuModel) View() tea.View {
 	header := m.renderHeader()
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
 	list, _ := m.buildListContent()
+	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
 
-	// measure the natural width of the list block and center it as a unit
 	centeredList := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
-		Render(list)
+		Render(clipped)
 
 	parts := []string{header, centeredList}
 	if m.status != "" {

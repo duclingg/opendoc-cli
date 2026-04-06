@@ -2,9 +2,9 @@ package setup
 
 import (
 	"opendoc/config"
+	"opendoc/ui/lineutil"
 	"opendoc/ui/styles"
 
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -78,12 +78,12 @@ var llmProviders = []llmProvider{
 }
 
 type LLMSetupModel struct {
-	cfg      *config.Config
-	cursor   int
-	width    int
-	height   int
-	vp       viewport.Model
-	returnTo func(*config.Config, int, int) tea.Model
+	cfg          *config.Config
+	cursor       int
+	width        int
+	height       int
+	scrollOffset int
+	returnTo     func(*config.Config, int, int) tea.Model
 }
 
 func NewLLMSetupModel(cfg *config.Config, w, h int, returnTo func(*config.Config, int, int) tea.Model) *LLMSetupModel {
@@ -96,8 +96,7 @@ func NewLLMSetupModel(cfg *config.Config, w, h int, returnTo func(*config.Config
 	}
 
 	m := &LLMSetupModel{cfg: cfg, cursor: cursor, width: w, height: h, returnTo: returnTo}
-	m.vp = viewport.New()
-	m.syncViewport()
+	m.updateScroll()
 	return m
 }
 
@@ -108,7 +107,7 @@ func (m *LLMSetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.syncViewport()
+		m.updateScroll()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -122,13 +121,13 @@ func (m *LLMSetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "down", "j":
 			if m.cursor < len(llmProviders)-1 {
 				m.cursor++
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "enter", " ":
@@ -203,17 +202,36 @@ func (m *LLMSetupModel) contentWidth() int {
 	return maxWidth
 }
 
-func (m *LLMSetupModel) syncViewport() {
+func (m *LLMSetupModel) cursorItemHeight() int {
+	p := llmProviders[m.cursor]
+	var indicator string
+	if p.id == m.cfg.LLMProvider {
+		indicator = llmSelectedIndicatorStyle.Render("●") + " "
+	} else {
+		indicator = llmUnselectedIndicatorStyle.Render("○") + " "
+	}
+	title := indicator + styles.ItemTitleSelected.Render(p.name)
+	desc := styles.ItemDescStyle.Render(p.desc)
+	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
+}
+
+func (m *LLMSetupModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 	header := m.renderHeader()
-	headerH := lipgloss.Height(header)
-	m.vp.SetWidth(m.contentWidth())
-	m.vp.SetHeight(m.height - headerH)
-	content, cursorLine := m.buildListContent()
-	m.vp.SetContent(content)
-	m.vp.EnsureVisible(cursorLine, 0, 0)
+	availH := m.height - lipgloss.Height(header)
+	_, cursorLine := m.buildListContent()
+	cursorItemH := m.cursorItemHeight()
+	if cursorLine < m.scrollOffset {
+		m.scrollOffset = cursorLine
+	}
+	if cursorLine+cursorItemH > m.scrollOffset+availH {
+		m.scrollOffset = cursorLine + cursorItemH - availH
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -242,11 +260,13 @@ var (
 
 func (m *LLMSetupModel) View() tea.View {
 	header := m.renderHeader()
+	availH := m.height - lipgloss.Height(header)
 	list, _ := m.buildListContent()
+	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
 	centeredList := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
-		Render(list)
+		Render(clipped)
 	parts := []string{header, centeredList}
 	content := lipgloss.JoinVertical(lipgloss.Center, parts...)
 

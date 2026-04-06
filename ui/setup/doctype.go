@@ -2,9 +2,9 @@ package setup
 
 import (
 	"opendoc/config"
+	"opendoc/ui/lineutil"
 	"opendoc/ui/styles"
 
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -22,19 +22,18 @@ var docTypeOptions = []docTypeOption{
 type docTypeSaveMsg struct{ err error }
 
 type DocTypeModel struct {
-	cfg      *config.Config
-	cursor   int
-	width    int
-	height   int
-	status   string
-	vp       viewport.Model
-	returnTo func(*config.Config, int, int) tea.Model
+	cfg          *config.Config
+	cursor       int
+	width        int
+	height       int
+	status       string
+	scrollOffset int
+	returnTo     func(*config.Config, int, int) tea.Model
 }
 
 func NewDocTypeModel(cfg *config.Config, w, h int, returnTo func(*config.Config, int, int) tea.Model) *DocTypeModel {
 	m := &DocTypeModel{cfg: cfg, width: w, height: h, returnTo: returnTo}
-	m.vp = viewport.New()
-	m.syncViewport()
+	m.updateScroll()
 	return m
 }
 
@@ -45,7 +44,7 @@ func (m *DocTypeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.syncViewport()
+		m.updateScroll()
 
 	case docTypeSaveMsg:
 		if msg.err != nil {
@@ -67,13 +66,13 @@ func (m *DocTypeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "down", "j":
 			if m.cursor < len(docTypeOptions)-1 {
 				m.cursor++
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "enter", " ":
@@ -132,18 +131,31 @@ func (m *DocTypeModel) buildListContent() (string, int) {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...), cursorLine
 }
 
-func (m *DocTypeModel) syncViewport() {
+func (m *DocTypeModel) cursorItemHeight() int {
+	opt := docTypeOptions[m.cursor]
+	title := styles.ItemTitleSelected.Render(opt.label)
+	desc := styles.ItemDescStyle.Render(opt.desc)
+	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
+}
+
+func (m *DocTypeModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 	header := m.renderHeader()
-	headerH := lipgloss.Height(header)
-	const footerH = 2 // reserve space for status line
-	m.vp.SetWidth(m.contentWidth())
-	m.vp.SetHeight(m.height - headerH - footerH)
-	content, cursorLine := m.buildListContent()
-	m.vp.SetContent(content)
-	m.vp.EnsureVisible(cursorLine, 0, 0)
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
+	_, cursorLine := m.buildListContent()
+	cursorItemH := m.cursorItemHeight()
+	if cursorLine < m.scrollOffset {
+		m.scrollOffset = cursorLine
+	}
+	if cursorLine+cursorItemH > m.scrollOffset+availH {
+		m.scrollOffset = cursorLine + cursorItemH - availH
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -165,11 +177,14 @@ var (
 
 func (m *DocTypeModel) View() tea.View {
 	header := m.renderHeader()
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
 	list, _ := m.buildListContent()
+	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
 	centeredList := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
-		Render(list)
+		Render(clipped)
 	parts := []string{header, centeredList}
 	if m.status != "" {
 		parts = append(parts, docTypeStatusStyle.Render(m.status))

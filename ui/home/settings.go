@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"opendoc/config"
+	"opendoc/ui/lineutil"
 	"opendoc/ui/setup"
 	"opendoc/ui/styles"
 
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -22,13 +22,13 @@ const (
 type resetDoneMsg struct{ err error }
 
 type SettingsModel struct {
-	cfg     *config.Config
-	cursor  int
-	width   int
-	height  int
-	confirm confirmState
-	status  string
-	vp      viewport.Model
+	cfg          *config.Config
+	cursor       int
+	width        int
+	height       int
+	confirm      confirmState
+	status       string
+	scrollOffset int
 }
 
 type settingsItem struct {
@@ -47,8 +47,7 @@ var settingsItems = []settingsItem{
 
 func NewSettingsModel(cfg *config.Config, w, h int) *SettingsModel {
 	m := &SettingsModel{cfg: cfg, width: w, height: h}
-	m.vp = viewport.New()
-	m.syncViewport()
+	m.updateScroll()
 	return m
 }
 
@@ -59,7 +58,7 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.syncViewport()
+		m.updateScroll()
 
 	case resetDoneMsg:
 		m.confirm = confirmNone
@@ -89,13 +88,13 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "down", "j":
 			if m.cursor < len(settingsItems)-1 {
 				m.cursor++
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "enter", " ":
@@ -206,18 +205,31 @@ func (m *SettingsModel) contentWidth() int {
 	return maxWidth
 }
 
-func (m *SettingsModel) syncViewport() {
+func (m *SettingsModel) cursorItemHeight() int {
+	item := settingsItems[m.cursor]
+	title := styles.ItemTitleSelected.Render(item.title)
+	desc := styles.ItemDescStyle.Render(item.desc)
+	return lipgloss.Height(styles.ItemSelected.Render(title + "\n" + desc))
+}
+
+func (m *SettingsModel) updateScroll() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 	header := m.renderHeader()
-	headerH := lipgloss.Height(header)
-	const footerH = 2 // reserve space for status line
-	m.vp.SetWidth(m.contentWidth())
-	m.vp.SetHeight(m.height - headerH - footerH)
-	content, cursorLine := m.buildListContent()
-	m.vp.SetContent(content)
-	m.vp.EnsureVisible(cursorLine, 0, 0)
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
+	_, cursorLine := m.buildListContent()
+	cursorItemH := m.cursorItemHeight()
+	if cursorLine < m.scrollOffset {
+		m.scrollOffset = cursorLine
+	}
+	if cursorLine+cursorItemH > m.scrollOffset+availH {
+		m.scrollOffset = cursorLine + cursorItemH - availH
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -268,13 +280,15 @@ func (m *SettingsModel) View() tea.View {
 	}
 
 	header := m.renderHeader()
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
 	list, _ := m.buildListContent()
+	clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
 
-	// measure the natural width of the list block and center it as a unit
 	centeredList := lipgloss.NewStyle().
 		Width(m.width).
 		Align(lipgloss.Center).
-		Render(list)
+		Render(clipped)
 
 	parts := []string{header, centeredList}
 	if m.status != "" {

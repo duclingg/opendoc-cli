@@ -4,10 +4,10 @@ import (
 	"strings"
 
 	"opendoc/config"
+	"opendoc/ui/lineutil"
 	"opendoc/ui/styles"
 
 	"charm.land/bubbles/v2/textinput"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -19,15 +19,15 @@ type llmModelSaveMsg struct{ err error }
 // providers (Ollama, LM Studio) where the installed model name is unknown.
 
 type LLMModelModel struct {
-	cfg      *config.Config
-	provider llmProvider
-	cursor   int
-	input    textinput.Model // used only for local providers
-	vp       viewport.Model
-	width    int
-	height   int
-	status   string
-	returnTo func(*config.Config, int, int) tea.Model
+	cfg          *config.Config
+	provider     llmProvider
+	cursor       int
+	input        textinput.Model // used only for local providers
+	scrollOffset int
+	width        int
+	height       int
+	status       string
+	returnTo     func(*config.Config, int, int) tea.Model
 }
 
 func NewLLMModelModel(cfg *config.Config, provider llmProvider, w, h int, returnTo func(*config.Config, int, int) tea.Model) *LLMModelModel {
@@ -55,8 +55,7 @@ func NewLLMModelModel(cfg *config.Config, provider llmProvider, w, h int, return
 				break
 			}
 		}
-		m.vp = viewport.New()
-		m.syncViewport()
+		m.updateScroll()
 	}
 
 	return m
@@ -75,7 +74,7 @@ func (m *LLMModelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if !m.provider.local {
-			m.syncViewport()
+			m.updateScroll()
 		}
 
 	case llmModelSaveMsg:
@@ -98,13 +97,13 @@ func (m *LLMModelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if !m.provider.local && m.cursor > 0 {
 				m.cursor--
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "down", "j":
 			if !m.provider.local && m.cursor < len(m.provider.models)-1 {
 				m.cursor++
-				m.syncViewport()
+				m.updateScroll()
 			}
 
 		case "enter", " ":
@@ -188,18 +187,39 @@ func (m *LLMModelModel) contentWidth() int {
 	return maxWidth
 }
 
-func (m *LLMModelModel) syncViewport() {
+func (m *LLMModelModel) cursorItemHeight() int {
+	if m.provider.local || m.cursor >= len(m.provider.models) {
+		return 1
+	}
+	model := m.provider.models[m.cursor]
+	var indicator string
+	if model == m.cfg.LLMModel && m.cfg.LLMProvider == m.provider.id {
+		indicator = llmSelectedIndicatorStyle.Render("●") + " "
+	} else {
+		indicator = llmUnselectedIndicatorStyle.Render("○") + " "
+	}
+	title := indicator + styles.ItemTitleSelected.Render(model)
+	return lipgloss.Height(styles.ItemSelected.Render(title))
+}
+
+func (m *LLMModelModel) updateScroll() {
 	if m.width == 0 || m.height == 0 || m.provider.local {
 		return
 	}
 	header := m.renderHeader()
-	headerH := lipgloss.Height(header)
-	const footerH = 2 // reserve space for status line
-	m.vp.SetWidth(m.contentWidth())
-	m.vp.SetHeight(m.height - headerH - footerH)
-	content, cursorLine := m.buildListContent()
-	m.vp.SetContent(content)
-	m.vp.EnsureVisible(cursorLine, 0, 0)
+	const footerH = 2
+	availH := m.height - lipgloss.Height(header) - footerH
+	_, cursorLine := m.buildListContent()
+	cursorItemH := m.cursorItemHeight()
+	if cursorLine < m.scrollOffset {
+		m.scrollOffset = cursorLine
+	}
+	if cursorLine+cursorItemH > m.scrollOffset+availH {
+		m.scrollOffset = cursorLine + cursorItemH - availH
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -252,11 +272,14 @@ func (m *LLMModelModel) View() tea.View {
 		content = lipgloss.JoinVertical(lipgloss.Center, rows...)
 	} else {
 		header := m.renderHeader()
+		const footerH = 2
+		availH := m.height - lipgloss.Height(header) - footerH
 		list, _ := m.buildListContent()
+		clipped := lineutil.ClipLines(list, m.scrollOffset, availH)
 		centeredList := lipgloss.NewStyle().
 			Width(m.width).
 			Align(lipgloss.Center).
-			Render(list)
+			Render(clipped)
 		parts := []string{header, centeredList}
 		if m.status != "" {
 			parts = append(parts, llmModelStatusStyle.Render(m.status))
